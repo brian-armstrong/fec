@@ -1,0 +1,19 @@
+[package]
+name = "fec"
+version = "0.1.0"
+edition = "2021"
+authors = ["Brian Armstrong <brian.armstrong.ece+github@gmail.com>"]
+description = "Forward error correction for SDR, space, and satellite: convolutional (Viterbi) and Reed-Solomon codes, including the CCSDS (255,223) standard in both conventional and dual-basis representations."
+license = "BSD-3-Clause"
+keywords = ["fec", "reed-solomon", "viterbi", "ccsds", "sdr"]
+categories = ["encoding", "science"]
+
+[features]
+default = []
+
+[dependencies]
+
+[profile.release]
+debug = true
+lto = true
+codegen-units = 1

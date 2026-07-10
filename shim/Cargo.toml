@@ -1,0 +1,26 @@
+[package]
+name = "fec_shim"
+version = "0.1.0"
+edition = "2021"
+authors = ["Brian Armstrong <brian.armstrong.ece+github@gmail.com>"]
+
+[features]
+default = []
+
+[dependencies]
+fec = { path = ".." }
+libc = "0.2"
+
+[lib]
+name = "fec"
+crate-type = ["staticlib", "dylib"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
