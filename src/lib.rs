@@ -30,17 +30,15 @@ pub mod reed_solomon;
 
 mod util;
 
-#[doc(inline)]
-pub use convolutional::{
-    DecodeError as ConvDecodeError, Decoder as ConvDecoder, EncodeError as ConvEncodeError,
-    Encoder as ConvEncoder,
-};
 #[cfg(feature = "simd")]
 #[cfg_attr(docsrs, doc(cfg(feature = "simd")))]
 #[doc(inline)]
 pub use convolutional::SimdDecoder as ConvSimdDecoder;
 #[doc(inline)]
+pub use convolutional::{
+    DecodeError as ConvDecodeError, Decoder as ConvDecoder, EncodeError as ConvEncodeError, Encoder as ConvEncoder,
+};
+#[doc(inline)]
 pub use reed_solomon::{
-    DecodeError as RsDecodeError, Decoder as RsDecoder, EncodeError as RsEncodeError,
-    Encoder as RsEncoder,
+    DecodeError as RsDecodeError, Decoder as RsDecoder, EncodeError as RsEncodeError, Encoder as RsEncoder,
 };

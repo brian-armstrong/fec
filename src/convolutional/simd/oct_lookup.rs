@@ -12,7 +12,7 @@ impl DistanceShuffle {
     pub fn new(rate: u32, order: u32, poly_table: &[u8]) -> Self {
         // for each state, look up the concatenated output from the poly_table.
         // the total distance of that output is in i16, so we have to shuffle
-        // two bytes into it. but our shuffle is at the 8-bit level (epi8), 
+        // two bytes into it. but our shuffle is at the 8-bit level (epi8),
         // so the shuffle mask is 2 entries long
         let shuffle8: Vec<u8x16> = if rate <= 3 {
             let num_groups = 1usize << (order - 3);

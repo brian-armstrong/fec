@@ -30,10 +30,10 @@
 //!   vol. 4, no. 5, pp. 532-542, November 1960. (griesmer bound)
 //! - J. A. Heller (1968). Short constraint length convolutional coding. PhD thesis,
 //!   Massachusetts Institute of Technology (MIT), Department of Electrical Engineering. (heller bound)
-use std::env;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use fec::convolutional::sim::measure_ber;
+use std::env;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 const NUM_BER_POINTS: usize = 4;
 const DEFAULT_NUM_KEPT: usize = 20;
@@ -117,7 +117,11 @@ fn is_catastrophic(polys: &[u16]) -> bool {
 
 #[inline]
 fn output_weight_for_state(state: u32, rate: u32, polys: &[u16]) -> u32 {
-    polys.iter().take(rate as usize).map(|&poly| (state as u16 & poly).count_ones() & 1).sum()
+    polys
+        .iter()
+        .take(rate as usize)
+        .map(|&poly| (state as u16 & poly).count_ones() & 1)
+        .sum()
 }
 
 fn shortest_output_weight_to_zero(order: u32, rate: u32, polys: &[u16], cap: u32, target: Option<u32>) -> Vec<u16> {
@@ -401,10 +405,17 @@ impl SharedState {
         let start = self.evaluated;
         // do a sort of jumpstart in order to help bootstrap the d_free bound
         let start = (start + (self.total as f32 * START_OFFSET) as u128) % self.total;
-        let length = (self.total - start).min(self.total - self.evaluated).min(THREAD_BATCH as u128) as usize;
+        let length = (self.total - start)
+            .min(self.total - self.evaluated)
+            .min(THREAD_BATCH as u128) as usize;
         self.evaluated += length as u128;
         while self.next_print <= self.evaluated {
-            println!("evaluated {} / {} candidates ({}%)", self.next_print, self.total, self.next_print * 100 / self.total);
+            println!(
+                "evaluated {} / {} candidates ({}%)",
+                self.next_print,
+                self.total,
+                self.next_print * 100 / self.total
+            );
             self.next_print += self.step;
         }
         (start, length)
@@ -428,7 +439,13 @@ struct BestPolys {
 
 impl BestPolys {
     fn new(rate: u32, order: u32, num_kept: usize) -> Self {
-        BestPolys { rate, order, reciprocal: vec![0; rate as usize], kept: Vec::with_capacity(num_kept + 1), num_kept }
+        BestPolys {
+            rate,
+            order,
+            reciprocal: vec![0; rate as usize],
+            kept: Vec::with_capacity(num_kept + 1),
+            num_kept,
+        }
     }
 
     fn offer(&mut self, poly: &[u16], d_free: u32, rank: u128) {
@@ -474,7 +491,15 @@ impl BestPolys {
                     || (c.d_free == d_free && c.a_dfree == a_dfree && c.poly > poly)
             })
             .unwrap_or(self.kept.len());
-        self.kept.insert(pos, Candidate { poly, d_free, a_dfree, rank });
+        self.kept.insert(
+            pos,
+            Candidate {
+                poly,
+                d_free,
+                a_dfree,
+                rank,
+            },
+        );
         self.kept.truncate(self.num_kept);
     }
 
@@ -566,7 +591,12 @@ fn main() {
 
     println!("Searching {total} ({total:.2e}) convolutional codes with rate 1/{rate} and order {order}, d_free upper bound: {griesmer_bound}, minimum bound: {min_d_free}");
     let step = (total / 20).max(1); // report roughly every 5%
-    let shared = Mutex::new(SharedState { evaluated: 0, step, next_print: step, total });
+    let shared = Mutex::new(SharedState {
+        evaluated: 0,
+        step,
+        next_print: step,
+        total,
+    });
 
     // do a threaded search for polys
     let thread_best_polys: Vec<BestPolys> = std::thread::scope(|scope| {
@@ -616,7 +646,10 @@ fn main() {
     // merge the per-thread keep lists: same sort keys as BestPolys::insert
     let mut candidates: Vec<Candidate> = thread_best_polys.into_iter().flat_map(|k| k.kept).collect();
     candidates.sort_by(|a, b| {
-        b.d_free.cmp(&a.d_free).then(a.a_dfree.cmp(&b.a_dfree)).then(a.poly.cmp(&b.poly))
+        b.d_free
+            .cmp(&a.d_free)
+            .then(a.a_dfree.cmp(&b.a_dfree))
+            .then(a.poly.cmp(&b.poly))
     });
     candidates.truncate(num_kept);
 
@@ -630,22 +663,30 @@ fn main() {
         let cand_ref = &candidates;
         std::thread::scope(|scope| {
             for _ in 0..threads {
-                scope.spawn(|| {
-                    loop {
-                        let j = next_job.fetch_add(1, Ordering::Relaxed);
-                        if j >= num_jobs {
-                            break;
-                        }
-                        let (ber_index, candidate_index) = (j / num_candidates, j % num_candidates);
-                        let seed = base_seed ^ (ber_index as u64);
-                        let errs = measure_ber(rate, order, &cand_ref[candidate_index].poly, eb_n0[ber_index], len, block, seed);
-                        results[j].store(errs, Ordering::Relaxed);
+                scope.spawn(|| loop {
+                    let j = next_job.fetch_add(1, Ordering::Relaxed);
+                    if j >= num_jobs {
+                        break;
                     }
+                    let (ber_index, candidate_index) = (j / num_candidates, j % num_candidates);
+                    let seed = base_seed ^ (ber_index as u64);
+                    let errs = measure_ber(
+                        rate,
+                        order,
+                        &cand_ref[candidate_index].poly,
+                        eb_n0[ber_index],
+                        len,
+                        block,
+                        seed,
+                    );
+                    results[j].store(errs, Ordering::Relaxed);
                 });
             }
         });
         (0..num_candidates)
-            .map(|candidate_index| std::array::from_fn(|i| results[i * num_candidates + candidate_index].load(Ordering::Relaxed)))
+            .map(|candidate_index| {
+                std::array::from_fn(|i| results[i * num_candidates + candidate_index].load(Ordering::Relaxed))
+            })
             .collect()
     });
 
@@ -662,7 +703,13 @@ fn main() {
         for p in &cand.poly {
             print!(" {:06o}", p);
         }
-        print!("  [d_free={}, a_dfree={}, rank={} ({:.1}%)]", cand.d_free, cand.a_dfree, cand.rank, cand.rank as f64 * 100.0 / total as f64);
+        print!(
+            "  [d_free={}, a_dfree={}, rank={} ({:.1}%)]",
+            cand.d_free,
+            cand.a_dfree,
+            cand.rank,
+            cand.rank as f64 * 100.0 / total as f64
+        );
         if let Some(ber) = &ber {
             print!(" :");
             for s in 0..NUM_BER_POINTS {

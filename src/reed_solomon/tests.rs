@@ -1,6 +1,6 @@
 // Tests for the Reed-Solomon encoder and decoder.
 
-use crate::reed_solomon::{DecodeError, EncodeError, FieldOperation, Decoder, Encoder};
+use crate::reed_solomon::{DecodeError, Decoder, EncodeError, Encoder, FieldOperation};
 use crate::util::Rng;
 
 // ccsds primitive poly, first_consecutive_root=1, gap=1
@@ -10,6 +10,7 @@ struct Codec {
     enc: Encoder,
     dec: Decoder,
 }
+
 impl Codec {
     fn new(num_roots: usize) -> Codec {
         Codec {
@@ -23,12 +24,7 @@ impl Codec {
     fn decode(&mut self, encoded: &[u8], msg: &mut [u8]) -> Result<usize, DecodeError> {
         self.dec.decode(encoded, msg)
     }
-    fn decode_with_erasures(
-        &mut self,
-        encoded: &[u8],
-        erasures: &[u8],
-        msg: &mut [u8],
-    ) -> Result<usize, DecodeError> {
+    fn decode_with_erasures(&mut self, encoded: &[u8], erasures: &[u8], msg: &mut [u8]) -> Result<usize, DecodeError> {
         self.dec.decode_with_erasures(encoded, erasures, msg)
     }
     // mirror the read-only accessors a few tests check
@@ -167,10 +163,7 @@ fn decode_erasures_only() {
 
     let mut decoded = vec![0u8; 223];
     // 28 erasures -> 28 corrections
-    assert_eq!(
-        rs.decode_with_erasures(&corrupted, &erasures, &mut decoded),
-        Ok(28)
-    );
+    assert_eq!(rs.decode_with_erasures(&corrupted, &erasures, &mut decoded), Ok(28));
     assert_eq!(&decoded[..], &msg[..]);
 }
 
@@ -195,10 +188,7 @@ fn decode_mixed_erasures_and_errors() {
 
     let mut decoded = vec![0u8; 223];
     // 10 erasures + 10 errors -> 20 total corrections
-    assert_eq!(
-        rs.decode_with_erasures(&corrupted, &erasures, &mut decoded),
-        Ok(20)
-    );
+    assert_eq!(rs.decode_with_erasures(&corrupted, &erasures, &mut decoded), Ok(20));
     assert_eq!(&decoded[..], &msg[..]);
 }
 
@@ -232,10 +222,7 @@ fn decode_clean_block_with_declared_erasures() {
     let erasures = [1u8, 2, 3, 4];
     let mut decoded = vec![0u8; 223];
     // block is actually clean -> all-zero syndromes -> zero corrections
-    assert_eq!(
-        rs.decode_with_erasures(&encoded, &erasures, &mut decoded),
-        Ok(0)
-    );
+    assert_eq!(rs.decode_with_erasures(&encoded, &erasures, &mut decoded), Ok(0));
     assert_eq!(&decoded[..], &msg[..]);
 }
 
@@ -273,10 +260,7 @@ fn decode_then_encode_again_reuses_state() {
     }
     let mut decoded = vec![0u8; 223];
     // 4 erasures -> 4 corrections
-    assert_eq!(
-        rs.decode_with_erasures(&corrupted, &erasures, &mut decoded),
-        Ok(4)
-    );
+    assert_eq!(rs.decode_with_erasures(&corrupted, &erasures, &mut decoded), Ok(4));
     assert_eq!(&decoded[..], &msg[..]);
 
     // now a plain error decode on the same object: 1 error -> 1 correction
@@ -315,13 +299,7 @@ fn stress_shuffle(a: &mut [usize], rng: &mut Rng) {
     }
 }
 
-fn stress_one(
-    rs: &mut Codec,
-    msg_length: usize,
-    num_errors: usize,
-    num_erasures: usize,
-    rng: &mut Rng,
-) {
+fn stress_one(rs: &mut Codec, msg_length: usize, num_errors: usize, num_erasures: usize, rng: &mut Rng) {
     let min_distance = rs.min_distance();
     let block_length = msg_length + min_distance;
 
@@ -351,8 +329,7 @@ fn stress_one(
     }
 
     let mut recvmsg = vec![0u8; msg_length];
-    let res =
-        rs.decode_with_erasures(&corrupted[..block_length], &erasures, &mut recvmsg);
+    let res = rs.decode_with_erasures(&corrupted[..block_length], &erasures, &mut recvmsg);
     // every corrupted position is distinct with a nonzero mask, so the
     // decoder should report exactly errors+erasures corrections
     assert_eq!(
@@ -419,10 +396,7 @@ fn ccsds_constructor_matches_explicit_params() {
     a.encode(&msg, &mut ea).unwrap();
     b.encode(&msg, &mut eb).unwrap();
     assert_eq!(ea, eb);
-    assert_eq!(
-        &ea[223..231],
-        &[7, 241, 220, 182, 219, 39, 138, 175]
-    );
+    assert_eq!(&ea[223..231], &[7, 241, 220, 182, 219, 39, 138, 175]);
 }
 
 #[test]
@@ -432,9 +406,8 @@ fn ccsds_dual_basis() {
     let mut parity = vec![0u8; 32];
     enc.encode_ccsds_dual(&msg, &mut parity).unwrap();
     let expected: [u8; 32] = [
-        0x5e, 0x90, 0x7c, 0x02, 0xde, 0xac, 0x84, 0x37, 0x2f, 0xb4, 0x52, 0x39, 0x29, 0x72,
-        0x77, 0x61, 0xbc, 0x4d, 0xf1, 0x0b, 0x7a, 0xc5, 0xc5, 0x04, 0x2b, 0x25, 0x8d, 0xb0,
-        0x17, 0xb1, 0x35, 0xed,
+        0x5e, 0x90, 0x7c, 0x02, 0xde, 0xac, 0x84, 0x37, 0x2f, 0xb4, 0x52, 0x39, 0x29, 0x72, 0x77, 0x61, 0xbc, 0x4d,
+        0xf1, 0x0b, 0x7a, 0xc5, 0xc5, 0x04, 0x2b, 0x25, 0x8d, 0xb0, 0x17, 0xb1, 0x35, 0xed,
     ];
     assert_eq!(&parity[..], &expected);
 }
@@ -452,7 +425,9 @@ fn ccsds_dual_basis_roundtrip_corrects() {
     let mut block = msg.clone();
     block.extend_from_slice(&parity);
     // corrupt 16 (= t) bytes
-    for &p in &[1usize, 9, 30, 55, 80, 111, 140, 160, 177, 200, 222, 230, 240, 250, 252, 254] {
+    for &p in &[
+        1usize, 9, 30, 55, 80, 111, 140, 160, 177, 200, 222, 230, 240, 250, 252, 254,
+    ] {
         block[p] ^= 0x5A;
     }
 

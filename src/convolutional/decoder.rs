@@ -55,10 +55,7 @@ impl<'a> ConvolutionalError<'a> {
 ///
 /// This is the portable scalar decoder. For higher throughput on x86, enable
 /// the `simd` feature and use the SIMD decoder. It decodes identically.
-#[cfg_attr(
-    feature = "simd",
-    doc = "See [`SimdDecoder`](super::SimdDecoder)."
-)]
+#[cfg_attr(feature = "simd", doc = "See [`SimdDecoder`](super::SimdDecoder).")]
 #[derive(Debug)]
 pub struct Decoder {
     rate: u32,
@@ -420,11 +417,7 @@ impl ConvolutionalHistoryTable {
         // loop 1 - rewind history table but don't collect any bits
         // these bits are still converging
         for _ in 0..min_traceback_length {
-            index = if index == 0 {
-                self.history_cap - 1
-            } else {
-                index - 1
-            };
+            index = if index == 0 { self.history_cap - 1 } else { index - 1 };
 
             let bit = self.history[index * self.num_states as usize + best_path as usize];
             let reg_bit = if bit == 0 { 0 } else { self.highbit };
@@ -434,11 +427,7 @@ impl ConvolutionalHistoryTable {
         // loop 2 - rewind history table and collect bits
         let num_decodes = self.history_len - min_traceback_length as usize;
         for decoded in self.decode_buf.iter_mut().take(num_decodes) {
-            index = if index == 0 {
-                self.history_cap - 1
-            } else {
-                index - 1
-            };
+            index = if index == 0 { self.history_cap - 1 } else { index - 1 };
 
             let bit = self.history[index * self.num_states as usize + best_path as usize];
             let (reg_bit, decoded_bit) = if bit == 0 { (0, 0) } else { (self.highbit, 1) };
@@ -603,15 +592,18 @@ mod tests {
         } else {
             let mut soft = vec![0u8; enc_bits];
             for (i, s) in soft.iter_mut().enumerate() {
-                *s = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 { 255 } else { 0 };
+                *s = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 {
+                    255
+                } else {
+                    0
+                };
             }
             dec.decode_soft(&soft, &mut out).unwrap();
         }
 
         let mode = if hard { "hard" } else { "soft" };
         assert_eq!(
-            &out,
-            &msg,
+            &out, &msg,
             "scalar decode wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
              clean={clean} seed={seed}"
         );
@@ -629,15 +621,42 @@ mod tests {
         }
     }
 
-    #[test] fn decoder_matches_msg_2_4() { test_rate_order::<2, 4>(&[0o017, 0o013]); }
-    #[test] fn decoder_matches_msg_2_5() { test_rate_order::<2, 5>(&[0o027, 0o023]); }
-    #[test] fn decoder_matches_msg_2_6() { test_rate_order::<2, 6>(&[0o065, 0o057]); }
-    #[test] fn decoder_matches_msg_2_7() { test_rate_order::<2, 7>(&[0o155, 0o117]); }
-    #[test] fn decoder_matches_msg_2_8() { test_rate_order::<2, 8>(&[0o367, 0o225]); }
-    #[test] fn decoder_matches_msg_2_9() { test_rate_order::<2, 9>(&[0o657, 0o435]); }
-    #[test] fn decoder_matches_msg_2_10() { test_rate_order::<2, 10>(&[0o1627, 0o1063]); }
-    #[test] fn decoder_matches_msg_3_9() { test_rate_order::<3, 9>(&[0o755, 0o633, 0o447]); }
-    #[test] fn decoder_matches_msg_4_7() { test_rate_order::<4, 7>(&[0o133, 0o175, 0o107, 0o101]); }
+    #[test]
+    fn decoder_matches_msg_2_4() {
+        test_rate_order::<2, 4>(&[0o017, 0o013]);
+    }
+    #[test]
+    fn decoder_matches_msg_2_5() {
+        test_rate_order::<2, 5>(&[0o027, 0o023]);
+    }
+    #[test]
+    fn decoder_matches_msg_2_6() {
+        test_rate_order::<2, 6>(&[0o065, 0o057]);
+    }
+    #[test]
+    fn decoder_matches_msg_2_7() {
+        test_rate_order::<2, 7>(&[0o155, 0o117]);
+    }
+    #[test]
+    fn decoder_matches_msg_2_8() {
+        test_rate_order::<2, 8>(&[0o367, 0o225]);
+    }
+    #[test]
+    fn decoder_matches_msg_2_9() {
+        test_rate_order::<2, 9>(&[0o657, 0o435]);
+    }
+    #[test]
+    fn decoder_matches_msg_2_10() {
+        test_rate_order::<2, 10>(&[0o1627, 0o1063]);
+    }
+    #[test]
+    fn decoder_matches_msg_3_9() {
+        test_rate_order::<3, 9>(&[0o755, 0o633, 0o447]);
+    }
+    #[test]
+    fn decoder_matches_msg_4_7() {
+        test_rate_order::<4, 7>(&[0o133, 0o175, 0o107, 0o101]);
+    }
     #[test]
     fn decoder_matches_msg_6_15() {
         test_rate_order::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537]);
@@ -802,16 +821,64 @@ mod tests {
 
     #[test]
     fn ber_threshold_3_9() {
-        assert_ber_threshold(3, 9, &[0o755, 0o633, 0o447], 2.0, 100_000, Some(R3K9_2_0_REF_BER), false);
-        assert_ber_threshold(3, 9, &[0o755, 0o633, 0o447], 1.5, 100_000, Some(R3K9_1_5_REF_BER), false);
-        assert_ber_threshold(3, 9, &[0o755, 0o633, 0o447], 1.0, 100_000, Some(R3K9_1_0_REF_BER), false);
+        assert_ber_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            2.0,
+            100_000,
+            Some(R3K9_2_0_REF_BER),
+            false,
+        );
+        assert_ber_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            1.5,
+            100_000,
+            Some(R3K9_1_5_REF_BER),
+            false,
+        );
+        assert_ber_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            1.0,
+            100_000,
+            Some(R3K9_1_0_REF_BER),
+            false,
+        );
     }
 
     #[test]
     fn ber_threshold_hard_3_9() {
-        assert_ber_threshold(3, 9, &[0o755, 0o633, 0o447], 3.5, 100_000, Some(R3K9_3_5_HARD_REF_BER), true);
-        assert_ber_threshold(3, 9, &[0o755, 0o633, 0o447], 3.0, 100_000, Some(R3K9_3_0_HARD_REF_BER), true);
-        assert_ber_threshold(3, 9, &[0o755, 0o633, 0o447], 2.5, 100_000, Some(R3K9_2_5_HARD_REF_BER), true);
+        assert_ber_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            3.5,
+            100_000,
+            Some(R3K9_3_5_HARD_REF_BER),
+            true,
+        );
+        assert_ber_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            3.0,
+            100_000,
+            Some(R3K9_3_0_HARD_REF_BER),
+            true,
+        );
+        assert_ber_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            2.5,
+            100_000,
+            Some(R3K9_2_5_HARD_REF_BER),
+            true,
+        );
     }
 
     #[test]
@@ -831,48 +898,184 @@ mod tests {
     #[test]
     fn ber_threshold_6_7() {
         // roku nana! seis siete!
-        assert_ber_threshold(6, 7, &[0o111, 0o127, 0o133, 0o167, 0o173, 0o175], 2.0, 100_000, None, false);
-        assert_ber_threshold(6, 7, &[0o111, 0o127, 0o133, 0o167, 0o173, 0o175], 1.5, 100_000, None, false);
-        assert_ber_threshold(6, 7, &[0o111, 0o127, 0o133, 0o167, 0o173, 0o175], 1.0, 100_000, None, false);
+        assert_ber_threshold(
+            6,
+            7,
+            &[0o111, 0o127, 0o133, 0o167, 0o173, 0o175],
+            2.0,
+            100_000,
+            None,
+            false,
+        );
+        assert_ber_threshold(
+            6,
+            7,
+            &[0o111, 0o127, 0o133, 0o167, 0o173, 0o175],
+            1.5,
+            100_000,
+            None,
+            false,
+        );
+        assert_ber_threshold(
+            6,
+            7,
+            &[0o111, 0o127, 0o133, 0o167, 0o173, 0o175],
+            1.0,
+            100_000,
+            None,
+            false,
+        );
     }
 
     #[test]
     fn ber_threshold_6_15() {
-        assert_ber_threshold(6, 15, &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], 0.7, 10_000, None, false);
-        assert_ber_threshold(6, 15, &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], 0.5, 10_000, None, false);
+        assert_ber_threshold(
+            6,
+            15,
+            &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537],
+            0.7,
+            10_000,
+            None,
+            false,
+        );
+        assert_ber_threshold(
+            6,
+            15,
+            &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537],
+            0.5,
+            10_000,
+            None,
+            false,
+        );
     }
 
     #[test]
     #[ignore = "slow: rate 1/6 k=15 threshold"]
     fn ber_threshold_ref_6_15() {
-        assert_ber_threshold(6, 15, &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], 1.5, 200_000, Some(R6K15_1_5_REF_BER), false);
-        assert_ber_threshold(6, 15, &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], 1.0, 50_000, Some(R6K15_1_0_REF_BER), false);
+        assert_ber_threshold(
+            6,
+            15,
+            &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537],
+            1.5,
+            200_000,
+            Some(R6K15_1_5_REF_BER),
+            false,
+        );
+        assert_ber_threshold(
+            6,
+            15,
+            &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537],
+            1.0,
+            50_000,
+            Some(R6K15_1_0_REF_BER),
+            false,
+        );
     }
 
     #[test]
     fn ber_threshold_hard_6_15() {
-        assert_ber_threshold(6, 15, &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], 1.7, 10_000, None, true);
-        assert_ber_threshold(6, 15, &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], 1.5, 10_000, None, true);
+        assert_ber_threshold(
+            6,
+            15,
+            &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537],
+            1.7,
+            10_000,
+            None,
+            true,
+        );
+        assert_ber_threshold(
+            6,
+            15,
+            &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537],
+            1.5,
+            10_000,
+            None,
+            true,
+        );
     }
 
     #[test]
     #[ignore = "slow: rate 1/6 k=15 hard threshold"]
     fn ber_threshold_hard_ref_6_15() {
-        assert_ber_threshold(6, 15, &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], 2.5, 200_000, Some(R6K15_2_5_HARD_REF_BER), true);
-        assert_ber_threshold(6, 15, &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], 2.0, 50_000, Some(R6K15_2_0_HARD_REF_BER), true);
+        assert_ber_threshold(
+            6,
+            15,
+            &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537],
+            2.5,
+            200_000,
+            Some(R6K15_2_5_HARD_REF_BER),
+            true,
+        );
+        assert_ber_threshold(
+            6,
+            15,
+            &[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537],
+            2.0,
+            50_000,
+            Some(R6K15_2_0_HARD_REF_BER),
+            true,
+        );
     }
 
     #[test]
     fn ber_threshold_7_7() {
-        assert_ber_threshold(7, 7, &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145], 2.0, 100_000, None, false);
-        assert_ber_threshold(7, 7, &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145], 1.5, 100_000, None, false);
-        assert_ber_threshold(7, 7, &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145], 1.0, 100_000, None, false);
+        assert_ber_threshold(
+            7,
+            7,
+            &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145],
+            2.0,
+            100_000,
+            None,
+            false,
+        );
+        assert_ber_threshold(
+            7,
+            7,
+            &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145],
+            1.5,
+            100_000,
+            None,
+            false,
+        );
+        assert_ber_threshold(
+            7,
+            7,
+            &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145],
+            1.0,
+            100_000,
+            None,
+            false,
+        );
     }
 
     #[test]
     fn ber_threshold_8_7() {
-        assert_ber_threshold(8, 7, &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], 2.0, 100_000, None, false);
-        assert_ber_threshold(8, 7, &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], 1.5, 100_000, None, false);
-        assert_ber_threshold(8, 7, &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], 1.0, 100_000, None, false);
+        assert_ber_threshold(
+            8,
+            7,
+            &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171],
+            2.0,
+            100_000,
+            None,
+            false,
+        );
+        assert_ber_threshold(
+            8,
+            7,
+            &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171],
+            1.5,
+            100_000,
+            None,
+            false,
+        );
+        assert_ber_threshold(
+            8,
+            7,
+            &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171],
+            1.0,
+            100_000,
+            None,
+            false,
+        );
     }
 }

@@ -74,11 +74,7 @@ fn default_polys(rate: u32, order: u32) -> Option<Vec<u16>> {
     Some(p.to_vec())
 }
 
-fn time_decode(
-    msg_len: usize,
-    iters: usize,
-    mut decode: impl FnMut(usize) -> usize,
-) -> (f64, f64, f64, usize) {
+fn time_decode(msg_len: usize, iters: usize, mut decode: impl FnMut(usize) -> usize) -> (f64, f64, f64, usize) {
     let mut errors = 0usize;
     // do a warmup pass
     for j in 0..iters {
@@ -170,7 +166,6 @@ fn run<const RATE: u32, const ORDER: u32>(
         time_one::<RATE, ORDER>(polys, &cases, msg_len, eb_n0_db, hard, path);
     }
 }
-
 
 fn valid_paths(rate: u32, order: u32) -> Vec<Probe> {
     use ForcedPath::*;
@@ -294,9 +289,7 @@ fn main() {
         std::process::exit(1);
     }
     if positional.len() < 2 {
-        eprintln!(
-            "usage: throughput <rate> <order> [poly1_oct poly2_oct ...] [--path <name> | --all]"
-        );
+        eprintln!("usage: throughput <rate> <order> [poly1_oct poly2_oct ...] [--path <name> | --all]");
         std::process::exit(1);
     }
     let rate: u32 = positional[0].parse().expect("rate");
@@ -308,9 +301,7 @@ fn main() {
             .collect()
     } else {
         default_polys(rate, order).unwrap_or_else(|| {
-            eprintln!(
-                "no default polys for (rate, order) = ({rate}, {order}); supply them explicitly"
-            );
+            eprintln!("no default polys for (rate, order) = ({rate}, {order}); supply them explicitly");
             std::process::exit(1);
         })
     };

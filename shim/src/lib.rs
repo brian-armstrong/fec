@@ -11,17 +11,17 @@
 //! codes and calls, and does not export every symbol libfec provides. See the
 //! crate README for the supported-symbol list and build instructions.
 
+use libc::{c_int, c_uint};
 use std::slice;
 use std::sync::{Mutex, OnceLock};
-use libc::{c_int, c_uint};
 
 #[cfg(not(feature = "simd"))]
 use fec::ConvDecoder as Decoder;
 #[cfg(feature = "simd")]
 use fec::ConvSimdDecoder as Decoder;
 
-use fec::{RsDecoder, RsEncoder};
 use fec::reed_solomon::ccsds::{conv_to_dual, dual_to_conv};
+use fec::{RsDecoder, RsEncoder};
 
 #[cfg(feature = "simd")]
 fn make_decoder<const R: u32, const O: u32>(polys: &[u16]) -> Decoder<R, O> {
@@ -80,10 +80,9 @@ impl<const R: u32, const O: u32> Shim<R, O> {
             decoded_len = remaining_bits;
         }
 
-        let _ = self.decoder.decode_soft(
-            encoded,
-            &mut self.decode_buffer[self.write_index..],
-        );
+        let _ = self
+            .decoder
+            .decode_soft(encoded, &mut self.decode_buffer[self.write_index..]);
         self.write_index += decoded_len / 8;
     }
 
@@ -103,9 +102,7 @@ impl<const R: u32, const O: u32> Shim<R, O> {
             receive_len = receive_bits / 8 + 1;
         }
 
-        decoded[..receive_len].clone_from_slice(
-            &self.decode_buffer[self.read_index..(self.read_index + receive_len)],
-        );
+        decoded[..receive_len].clone_from_slice(&self.decode_buffer[self.read_index..(self.read_index + receive_len)]);
         self.read_index += receive_len;
     }
 }
@@ -134,11 +131,7 @@ pub extern "C" fn init_viterbi27(shim_ptr: *mut Shim<2, 7>, _: c_int) -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn update_viterbi27_blk(
-    shim_ptr: *mut Shim<2, 7>,
-    encoded_ptr: *const u8,
-    num_groups: c_int,
-) -> c_int {
+pub extern "C" fn update_viterbi27_blk(shim_ptr: *mut Shim<2, 7>, encoded_ptr: *const u8, num_groups: c_int) -> c_int {
     let shim: &mut Shim<2, 7>;
     let encoded: &[u8];
     unsafe {
@@ -193,11 +186,7 @@ pub extern "C" fn init_viterbi29(shim_ptr: *mut Shim<2, 9>, _: c_int) -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn update_viterbi29_blk(
-    shim_ptr: *mut Shim<2, 9>,
-    encoded_ptr: *const u8,
-    num_groups: c_int,
-) -> c_int {
+pub extern "C" fn update_viterbi29_blk(shim_ptr: *mut Shim<2, 9>, encoded_ptr: *const u8, num_groups: c_int) -> c_int {
     let shim: &mut Shim<2, 9>;
     let encoded: &[u8];
     unsafe {
@@ -254,11 +243,7 @@ pub extern "C" fn init_viterbi39(shim_ptr: *mut Shim<3, 9>, _: c_int) -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn update_viterbi39_blk(
-    shim_ptr: *mut Shim<3, 9>,
-    encoded_ptr: *const u8,
-    num_groups: c_int,
-) -> c_int {
+pub extern "C" fn update_viterbi39_blk(shim_ptr: *mut Shim<3, 9>, encoded_ptr: *const u8, num_groups: c_int) -> c_int {
     let shim: &mut Shim<3, 9>;
     let encoded: &[u8];
     unsafe {
@@ -410,11 +395,7 @@ pub extern "C" fn free_rs_char(rs_ptr: *mut RsShim) {
 }
 
 #[no_mangle]
-pub extern "C" fn encode_rs_char(
-    rs_ptr: *mut RsShim,
-    msg_ptr: *const u8,
-    parity_ptr: *mut u8,
-) {
+pub extern "C" fn encode_rs_char(rs_ptr: *mut RsShim, msg_ptr: *const u8, parity_ptr: *mut u8) {
     let shim: &mut RsShim;
     let msg: &[u8];
     let parity: &mut [u8];

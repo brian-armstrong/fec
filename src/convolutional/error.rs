@@ -37,10 +37,7 @@ pub enum DecodeError {
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DecodeError::InvalidLength {
-                num_encoded_bits,
-                rate,
-            } => write!(
+            DecodeError::InvalidLength { num_encoded_bits, rate } => write!(
                 f,
                 "encoded length {num_encoded_bits} bits is not a multiple of rate {rate}"
             ),
@@ -92,15 +89,8 @@ impl std::error::Error for EncodeError {}
 /// The length must be a whole number of code symbols, and it must be long
 /// enough to run the head and tail phases. Both failures return
 /// [`InvalidLength`](DecodeError::InvalidLength).
-pub(crate) fn validate_encoded_len(
-    num_encoded_bits: usize,
-    rate: u32,
-    order: u32,
-) -> Result<u32, DecodeError> {
-    let invalid = DecodeError::InvalidLength {
-        num_encoded_bits,
-        rate,
-    };
+pub(crate) fn validate_encoded_len(num_encoded_bits: usize, rate: u32, order: u32) -> Result<u32, DecodeError> {
+    let invalid = DecodeError::InvalidLength { num_encoded_bits, rate };
 
     if !num_encoded_bits.is_multiple_of(rate as usize) {
         return Err(invalid);

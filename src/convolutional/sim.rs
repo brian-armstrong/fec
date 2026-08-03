@@ -12,9 +12,9 @@
 //! channel uses. [`Rng`] is the deterministic RNG the noise is drawn from, so
 //! every run with a given seed is reproducible.
 
-use super::{Decoder, Encoder};
 #[cfg(feature = "simd")]
 use super::SimdDecoder;
+use super::{Decoder, Encoder};
 
 /// A deterministic SplitMix64 RNG. Re-exported here because the public `sim`
 /// functions ([`gaussian`], [`flip_with_interval`]) take it by reference.
@@ -253,12 +253,7 @@ impl Testbench {
     /// after decoding. The second is the uncoded channel flip count from
     /// [`bpsk_with_noise_soft`](Self::bpsk_with_noise_soft). Comparing the two
     /// shows the coding gain.
-    pub fn test_decoder_with_noise(
-        &mut self,
-        decoder: &mut Decoder,
-        msg: &[u8],
-        bpsk_voltage: f64,
-    ) -> (usize, usize) {
+    pub fn test_decoder_with_noise(&mut self, decoder: &mut Decoder, msg: &[u8], bpsk_voltage: f64) -> (usize, usize) {
         let n_bytes = msg.len();
         let mut soft = vec![0u8; self.enclen_bits];
         let mut msg_out = vec![0u8; n_bytes];
@@ -321,7 +316,9 @@ impl Testbench {
         let mut msg_out = vec![0u8; n_bytes];
         let uncoded_flips = self.bpsk_with_noise_soft(msg, bpsk_voltage, &mut soft);
 
-        let decoded_len = decoder.decode_soft(&soft, &mut msg_out).expect("simd soft decode failed");
+        let decoded_len = decoder
+            .decode_soft(&soft, &mut msg_out)
+            .expect("simd soft decode failed");
         assert_eq!(
             decoded_len, n_bytes,
             "expected to decode {n_bytes} bytes, got {decoded_len}"
@@ -358,12 +355,16 @@ impl Testbench {
                         hard[i / 8] |= 0x80 >> (i % 8);
                     }
                 }
-                TestCase { soft, hard, msg, enc_bits: self.enclen_bits }
+                TestCase {
+                    soft,
+                    hard,
+                    msg,
+                    enc_bits: self.enclen_bits,
+                }
             })
             .collect()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -399,12 +400,15 @@ mod tests {
     fn assert_coding_gain(rate: u32, order: u32, polys: &[u16], high_db: f64, mid_db: f64, bytes: usize) {
         let high = measure_ber(rate, order, polys, high_db, bytes, 4096, 1234_5678);
         let mid = measure_ber(rate, order, polys, mid_db, bytes, 4096, 1234_5678);
-        
+
         let high_uncoded = uncoded_ber(high_db, bytes * 8, 1234_5678);
         let mid_uncoded = uncoded_ber(mid_db, bytes * 8, 1234_5678);
 
         assert!(high < 1e-4, "{rate}/{order}: {high_db}dB coded BER too high: {high}");
-        assert!(high < high_uncoded / 100.0, "{rate}/{order}: no coding gain at {high_db}dB — coded {high} vs uncoded {high_uncoded}");
+        assert!(
+            high < high_uncoded / 100.0,
+            "{rate}/{order}: no coding gain at {high_db}dB — coded {high} vs uncoded {high_uncoded}"
+        );
         assert!(mid >= high, "{rate}/{order}: BER not monotonic ({mid} < {high})");
         assert!(
             mid < mid_uncoded / 25.0,

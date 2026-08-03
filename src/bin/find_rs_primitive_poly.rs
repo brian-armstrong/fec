@@ -26,11 +26,7 @@ fn trypoly(poly: FieldOperation, log: &mut [FieldLogarithm]) -> bool {
     log[0] = 0;
     for i in 1..(BLOCK_SIZE + 1) {
         element *= 2;
-        element = if element > BLOCK_SIZE {
-            element ^ poly
-        } else {
-            element
-        };
+        element = if element > BLOCK_SIZE { element ^ poly } else { element };
         if log[element as usize] != 0 {
             return false;
         }

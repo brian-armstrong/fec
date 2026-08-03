@@ -22,13 +22,7 @@ impl<'a> Polynomial<'a> {
 //
 // `res`/`res_order` is the destination (degree res_order, so res has res_order+1
 // coefficients).
-pub fn polynomial_mul(
-    field: &Field,
-    l: &Polynomial,
-    r: &Polynomial,
-    res: &mut [FieldElement],
-    res_order: usize,
-) {
+pub fn polynomial_mul(field: &Field, l: &Polynomial, r: &Polynomial, res: &mut [FieldElement], res_order: usize) {
     // perform an element-wise multiplication of two polynomials
     for c in res[..res_order + 1].iter_mut() {
         *c = 0;
@@ -86,8 +80,7 @@ pub fn polynomial_mod(
             continue;
         }
         let q_order = i - divisor.order;
-        let q_coeff: FieldLogarithm =
-            field.div_log(field.log[mod_[i] as usize], divisor_leading);
+        let q_coeff: FieldLogarithm = field.div_log(field.log[mod_[i] as usize], divisor_leading);
 
         // now that we've chosen q, multiply the divisor by q and subtract from
         //   our remainder. subtracting in GF(2^8) is XOR, just like addition
@@ -110,12 +103,7 @@ pub fn polynomial_mod(
 // where n*a(n) = sum(k=1, n, a(n)) e.g. the nth sum of a(n) in GF(2^8)
 //
 // assumes der.order = poly.order - 1
-pub fn polynomial_formal_derivative(
-    field: &Field,
-    poly: &Polynomial,
-    der: &mut [FieldElement],
-    der_order: usize,
-) {
+pub fn polynomial_formal_derivative(field: &Field, poly: &Polynomial, der: &mut [FieldElement], der_order: usize) {
     for c in der[..der_order + 1].iter_mut() {
         *c = 0;
     }
@@ -158,11 +146,7 @@ pub fn polynomial_eval(field: &Field, poly: &Polynomial, val: FieldElement) -> F
 // in this case, all of the logarithms of the successive powers of val have been precalculated
 // this removes the extra work we'd have to do to calculate val_exponentiated each time
 //   if this function is to be called on the same val multiple times
-pub fn polynomial_eval_lut(
-    field: &Field,
-    poly: &Polynomial,
-    val_exp: &[FieldLogarithm],
-) -> FieldElement {
+pub fn polynomial_eval_lut(field: &Field, poly: &Polynomial, val_exp: &[FieldLogarithm]) -> FieldElement {
     if val_exp[0] == 0 {
         return poly.coeff[0];
     }
@@ -183,11 +167,7 @@ pub fn polynomial_eval_lut(
 // evaluate the log_polynomial poly at a particular element val
 // like polynomial_eval_lut, the logarithms of the successive powers of val have been
 //   precomputed
-pub fn polynomial_eval_log_lut(
-    field: &Field,
-    poly_log: &Polynomial,
-    val_exp: &[FieldLogarithm],
-) -> FieldElement {
+pub fn polynomial_eval_log_lut(field: &Field, poly_log: &Polynomial, val_exp: &[FieldLogarithm]) -> FieldElement {
     if val_exp[0] == 0 {
         if poly_log.coeff[0] == 0 {
             // special case for the non-existant log case
@@ -211,12 +191,7 @@ pub fn polynomial_eval_log_lut(
 }
 
 // create the lookup table of successive powers of val used by polynomial_eval_lut
-pub fn polynomial_build_exp_lut(
-    field: &Field,
-    val: FieldElement,
-    order: usize,
-    val_exp: &mut [FieldLogarithm],
-) {
+pub fn polynomial_build_exp_lut(field: &Field, val: FieldElement, order: usize, val_exp: &mut [FieldLogarithm]) {
     let mut val_exponentiated: FieldLogarithm = field.log[1];
     let val_log: FieldLogarithm = field.log[val as usize];
     for i in 0..=order {
@@ -292,14 +267,7 @@ pub fn reed_solomon_build_generator(
     }
     let mut scratch0 = vec![0 as FieldElement; nroots + 1];
     let mut scratch1 = vec![0 as FieldElement; nroots + 1];
-    polynomial_init_from_roots(
-        field,
-        nroots,
-        roots,
-        generator,
-        &mut scratch0,
-        &mut scratch1,
-    );
+    polynomial_init_from_roots(field, nroots, roots, generator, &mut scratch0, &mut scratch1);
 }
 
 #[cfg(test)]

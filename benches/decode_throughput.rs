@@ -1,7 +1,7 @@
-use criterion::{criterion_group, criterion_main, BenchmarkGroup, Criterion, Throughput};
 use criterion::measurement::WallTime;
+use criterion::{criterion_group, criterion_main, BenchmarkGroup, Criterion, Throughput};
 use fec::convolutional::sim::{bpsk_params, TestCase, Testbench};
-use fec::convolutional::{ForcedPath, SimdDecoder, DecoderArch};
+use fec::convolutional::{DecoderArch, ForcedPath, SimdDecoder};
 use std::hint::black_box;
 
 const MSG_LEN: usize = 8192;
@@ -10,7 +10,13 @@ const CASES: usize = 64;
 fn eb_n0(rate: u32, order: u32) -> f64 {
     match (rate, order) {
         (6, 15) => 2.0,
-        (_, order) => if order >= 9 { 2.5 } else { 3.0 },
+        (_, order) => {
+            if order >= 9 {
+                2.5
+            } else {
+                3.0
+            }
+        }
     }
 }
 

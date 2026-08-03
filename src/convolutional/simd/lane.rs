@@ -9,10 +9,10 @@ use super::oct_lookup::{DistanceShuffle, OctLookup};
 fn pshufb(src: u8x16, mask: u8x16) -> u8x16 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        #[cfg(target_arch = "x86_64")]
-        use core::arch::x86_64::_mm_shuffle_epi8;
         #[cfg(target_arch = "x86")]
         use core::arch::x86::_mm_shuffle_epi8;
+        #[cfg(target_arch = "x86_64")]
+        use core::arch::x86_64::_mm_shuffle_epi8;
         unsafe { core::mem::transmute(_mm_shuffle_epi8(src.into(), mask.into())) }
     }
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
@@ -25,10 +25,10 @@ fn pshufb(src: u8x16, mask: u8x16) -> u8x16 {
 fn vpshufb256(src: u8x32, mask: u8x32) -> u8x32 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        #[cfg(target_arch = "x86_64")]
-        use core::arch::x86_64::_mm256_shuffle_epi8;
         #[cfg(target_arch = "x86")]
         use core::arch::x86::_mm256_shuffle_epi8;
+        #[cfg(target_arch = "x86_64")]
+        use core::arch::x86_64::_mm256_shuffle_epi8;
         unsafe { core::mem::transmute(_mm256_shuffle_epi8(src.into(), mask.into())) }
     }
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
@@ -41,10 +41,10 @@ fn vpshufb256(src: u8x32, mask: u8x32) -> u8x32 {
 fn vpshufb512(src: u8x64, mask: u8x64) -> u8x64 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        #[cfg(target_arch = "x86_64")]
-        use core::arch::x86_64::_mm512_shuffle_epi8;
         #[cfg(target_arch = "x86")]
         use core::arch::x86::_mm512_shuffle_epi8;
+        #[cfg(target_arch = "x86_64")]
+        use core::arch::x86_64::_mm512_shuffle_epi8;
         unsafe { core::mem::transmute(_mm512_shuffle_epi8(src.into(), mask.into())) }
     }
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
@@ -71,7 +71,7 @@ fn vpermi2w512(idx: u16x32, a: u16x32, b: u16x32) -> u16x32 {
     }
 }
 
-pub (crate) trait Lane: Copy {
+pub(crate) trait Lane: Copy {
     type Vec: Copy;
     const LANES: usize;
 
@@ -114,6 +114,7 @@ impl Lane for Lane256 {
         a.simd_min(b)
     }
     #[inline(always)]
+    #[rustfmt::skip]
     unsafe fn write_history(hist: *mut u8, byte_off: usize, lo: u16x16, hi: u16x16) {
         let lo_i: i16x16 = core::mem::transmute(lo);
         let hi_i: i16x16 = core::mem::transmute(hi);
@@ -136,6 +137,7 @@ impl Lane for Lane512 {
         a.simd_min(b)
     }
     #[inline(always)]
+    #[rustfmt::skip]
     unsafe fn write_history(hist: *mut u8, byte_off: usize, lo: u16x32, hi: u16x32) {
         let lo_i: i16x32 = core::mem::transmute(lo);
         let hi_i: i16x32 = core::mem::transmute(hi);
@@ -212,6 +214,7 @@ impl MemoryLane for Lane256 {
 
 impl MemoryLane for Lane512 {
     #[inline(always)]
+    #[rustfmt::skip]
     unsafe fn load_pred_dup(prev: *const u16, pred: usize, off: usize) -> u16x32 {
         let p16 = u16x16::from_array(*(prev.add(pred + off) as *const [u16; 16]));
         simd_swizzle!(p16, [
@@ -311,6 +314,7 @@ impl OctLookupLane for Lane512 {
         oct_lookup.distances16.as_ptr()
     }
     #[inline(always)]
+    #[rustfmt::skip]
     unsafe fn load_dist(keys: *const u16, octdist: *const u16, oct: usize, key_off: usize) -> u16x32 {
         // because we stay at the 16-wide version, we need two lookups here
         let k0 = *keys.add(key_off + oct) as usize;
@@ -352,6 +356,7 @@ impl ShuffleLane for Lane256 {
         distance_shuffle.shuffle16.as_ptr() as *const u8
     }
     #[inline(always)]
+    #[rustfmt::skip]
     unsafe fn load_dist_shuffle(ctrl: *const u8, g: usize, ctrl_off: usize, dsrc16: u8x16) -> u16x16 {
         // going wider here does not allow us to accomodate more distances
         // instead, we just broadcast the same number of distances to each 128-bit lane
@@ -373,6 +378,7 @@ impl ShuffleLane for Lane512 {
         distance_shuffle.shuffle32.as_ptr() as *const u8
     }
     #[inline(always)]
+    #[rustfmt::skip]
     unsafe fn load_dist_shuffle(ctrl: *const u8, g: usize, ctrl_off: usize, dsrc16: u8x16) -> u16x32 {
         // like the 256 version, broadcast the same number of distances to all 128-bit lanes
         let dsrc64: u8x64 = simd_swizzle!(
@@ -505,6 +511,7 @@ impl RegisterLane for Lane256 {
         distance_shuffle.shuffle16.as_ptr()
     }
     #[inline(always)]
+    #[rustfmt::skip]
     unsafe fn shuffle_dist(mask_ptr: *const u8x32, register: usize, offset: usize, dist16: u8x16) -> u16x16 {
         let dist32: u8x32 = simd_swizzle!(
             dist16,
@@ -562,6 +569,7 @@ impl RegisterLane for Lane512 {
         distance_shuffle.shuffle32.as_ptr()
     }
     #[inline(always)]
+    #[rustfmt::skip]
     unsafe fn shuffle_dist(mask_ptr: *const u8x64, register: usize, offset: usize, dist16: u8x16) -> u16x32 {
         let dist64: u8x64 = simd_swizzle!(
             dist16,
@@ -577,6 +585,7 @@ impl RegisterLane for Lane512 {
         unsafe { u16x32::from_array(*(prev.add(pred + offset) as *const [u16; 32])) }
     }
     #[inline(always)]
+    #[rustfmt::skip]
     fn pred_half(prev: u16x32, odd: bool) -> u16x32 {
         if odd {
             simd_swizzle!(prev, [

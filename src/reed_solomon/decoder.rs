@@ -2,9 +2,8 @@ use std::fmt;
 
 use super::field::{Field, FieldElement, FieldLogarithm, FieldOperation};
 use super::polynomial::{
-    polynomial_build_exp_lut, polynomial_eval_log_lut, polynomial_eval_lut,
-    polynomial_formal_derivative, polynomial_init_from_roots, polynomial_mul,
-    Polynomial, reed_solomon_build_generator,
+    polynomial_build_exp_lut, polynomial_eval_log_lut, polynomial_eval_lut, polynomial_formal_derivative,
+    polynomial_init_from_roots, polynomial_mul, reed_solomon_build_generator, Polynomial,
 };
 
 /// Error returned by [`Decoder::decode`] / [`Decoder::decode_with_erasures`].
@@ -265,8 +264,7 @@ impl Decoder {
         self.error_locator[0] = 1;
         self.error_locator_order = 0;
 
-        self.last_error_locator[..self.min_distance + 1]
-            .copy_from_slice(&self.error_locator[..self.min_distance + 1]);
+        self.last_error_locator[..self.min_distance + 1].copy_from_slice(&self.error_locator[..self.min_distance + 1]);
         self.last_error_locator_order = self.error_locator_order;
 
         let mut last_discrepancy: FieldElement = 1;
@@ -276,10 +274,7 @@ impl Decoder {
         for i in self.error_locator_order..(self.min_distance - num_erasures) {
             let mut discrepancy = self.syndromes[i];
             for j in 1..=numerrors {
-                discrepancy = field.add(
-                    discrepancy,
-                    field.mul(self.error_locator[j], self.syndromes[i - j]),
-                );
+                discrepancy = field.add(discrepancy, field.mul(self.error_locator[j], self.syndromes[i - j]));
             }
 
             if discrepancy == 0 {
@@ -299,10 +294,8 @@ impl Decoder {
                 // we move down because we're shifting up, and this prevents overwriting
                 for j in (0..=self.last_error_locator_order).rev() {
                     // the bounds here will be ok since we have a headroom of numerrors
-                    self.last_error_locator[j + delay_length] = field.div(
-                        field.mul(self.last_error_locator[j], discrepancy),
-                        last_discrepancy,
-                    );
+                    self.last_error_locator[j + delay_length] =
+                        field.div(field.mul(self.last_error_locator[j], discrepancy), last_discrepancy);
                 }
                 for j in (0..delay_length).rev() {
                     self.last_error_locator[j] = 0;
@@ -312,8 +305,7 @@ impl Decoder {
                 // we will also update last_locator to be locator before this loop takes place
                 for j in 0..=(self.last_error_locator_order + delay_length) {
                     let temp = self.error_locator[j];
-                    self.error_locator[j] =
-                        field.add(self.error_locator[j], self.last_error_locator[j]);
+                    self.error_locator[j] = field.add(self.error_locator[j], self.last_error_locator[j]);
                     self.last_error_locator[j] = temp;
                 }
                 let temp_order = self.error_locator_order;
@@ -337,18 +329,14 @@ impl Decoder {
             for j in (0..=self.last_error_locator_order).rev() {
                 self.error_locator[j + delay_length] = field.add(
                     self.error_locator[j + delay_length],
-                    field.div(
-                        field.mul(self.last_error_locator[j], discrepancy),
-                        last_discrepancy,
-                    ),
+                    field.div(field.mul(self.last_error_locator[j], discrepancy), last_discrepancy),
                 );
             }
-            self.error_locator_order =
-                if self.last_error_locator_order + delay_length > self.error_locator_order {
-                    self.last_error_locator_order + delay_length
-                } else {
-                    self.error_locator_order
-                };
+            self.error_locator_order = if self.last_error_locator_order + delay_length > self.error_locator_order {
+                self.last_error_locator_order + delay_length
+            } else {
+                self.error_locator_order
+            };
             delay_length += 1;
         }
         self.error_locator_order
@@ -417,10 +405,7 @@ impl Decoder {
             );
             let eval_derivative = polynomial_eval_lut(
                 field,
-                &Polynomial::new(
-                    &self.error_locator_derivative,
-                    self.error_locator_derivative_order,
-                ),
+                &Polynomial::new(&self.error_locator_derivative, self.error_locator_derivative_order),
                 &self.element_exp[self.error_roots[i] as usize],
             );
             self.error_vals[i] = field.mul(
@@ -450,9 +435,7 @@ impl Decoder {
             //   degree of the error locator
             // b) we have precomputed the error locator polynomial in log form, which
             //   helps reduce some lookups that would be done here
-            if polynomial_eval_log_lut(&self.field, &locator_log, &self.element_exp[i as usize])
-                == 0
-            {
+            if polynomial_eval_log_lut(&self.field, &locator_log, &self.element_exp[i as usize]) == 0 {
                 self.error_roots[root] = i as FieldElement;
                 root += 1;
             }
@@ -576,8 +559,7 @@ impl Decoder {
         let num_corrected = self.error_locator_order;
         for i in 0..self.error_locator_order {
             let loc = self.error_locations[i] as usize;
-            self.received_polynomial[loc] =
-                self.field.sub(self.received_polynomial[loc], self.error_vals[i]);
+            self.received_polynomial[loc] = self.field.sub(self.received_polynomial[loc], self.error_vals[i]);
         }
 
         for i in 0..msg_length {
@@ -704,8 +686,7 @@ impl Decoder {
 
         self.find_modified_syndromes();
 
-        self.syndrome_copy
-            .copy_from_slice(&self.syndromes[..self.min_distance]);
+        self.syndrome_copy.copy_from_slice(&self.syndromes[..self.min_distance]);
 
         for i in erasure_length..self.min_distance {
             self.syndromes[i - erasure_length] = self.modified_syndromes[i];
@@ -755,8 +736,7 @@ impl Decoder {
         let num_corrected = self.error_locator_order;
         for i in 0..self.error_locator_order {
             let loc = self.error_locations[i] as usize;
-            self.received_polynomial[loc] =
-                self.field.sub(self.received_polynomial[loc], self.error_vals[i]);
+            self.received_polynomial[loc] = self.field.sub(self.received_polynomial[loc], self.error_vals[i]);
         }
 
         // restore the original error locator by swapping the buffers back
@@ -779,11 +759,7 @@ impl Decoder {
     ///
     /// This decoder must have been built with the CCSDS parameters (see
     /// [`Decoder::new_ccsds`]).
-    pub fn decode_ccsds_dual(
-        &mut self,
-        encoded: &[u8],
-        msg: &mut [u8],
-    ) -> Result<usize, DecodeError> {
+    pub fn decode_ccsds_dual(&mut self, encoded: &[u8], msg: &mut [u8]) -> Result<usize, DecodeError> {
         use super::ccsds;
         // transform the whole dual-basis block to the conventional basis
         let conv_block: Vec<u8> = encoded.iter().map(|&b| ccsds::dual_to_conv(b)).collect();

@@ -93,8 +93,7 @@ impl Field {
         }
         // multiply two field elements by adding their logarithms.
         // yep, get your slide rules out
-        let res: FieldOperation =
-            self.log[l as usize] as FieldOperation + self.log[r as usize] as FieldOperation;
+        let res: FieldOperation = self.log[l as usize] as FieldOperation + self.log[r as usize] as FieldOperation;
 
         // if coeff exceeds 255, we would normally have to wrap it back around
         // alpha^255 = 1; alpha^256 = alpha^255 * alpha^1 = alpha^1
@@ -121,8 +120,8 @@ impl Field {
         // if rcoeff is larger, then log[l] - log[r] wraps under
         // so, instead, always add 255. in some cases, we'll wrap over, but
         // that's ok because the exp table runs up to 511.
-        let res: FieldOperation = 255 as FieldOperation + self.log[l as usize] as FieldOperation
-            - self.log[r as usize] as FieldOperation;
+        let res: FieldOperation =
+            255 as FieldOperation + self.log[l as usize] as FieldOperation - self.log[r as usize] as FieldOperation;
         self.exp[res as usize]
     }
 
@@ -143,8 +142,7 @@ impl Field {
 
     pub fn div_log(&self, l: FieldLogarithm, r: FieldLogarithm) -> FieldLogarithm {
         // like field_mul_log, this performs field_div without going through a field_element_t
-        let res: FieldOperation =
-            255 as FieldOperation + l as FieldOperation - r as FieldOperation;
+        let res: FieldOperation = 255 as FieldOperation + l as FieldOperation - r as FieldOperation;
         if res > 255 {
             return (res - 255) as FieldLogarithm;
         }

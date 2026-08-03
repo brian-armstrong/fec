@@ -1,7 +1,7 @@
 use std::simd::prelude::*;
 
 use super::lane::*;
-use super::oct_lookup::{OctLookup, DistanceShuffle};
+use super::oct_lookup::{DistanceShuffle, OctLookup};
 use crate::convolutional::bit::{BitReader, BitWriter};
 use crate::convolutional::decoder::ConvolutionalError;
 use crate::convolutional::error::{self, DecodeError};
@@ -10,19 +10,19 @@ use crate::convolutional::util;
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForcedPath {
-    RegisterAvx512,    // u16x32, fully register, AVX-512
-    RegisterAvx2,      // u16x16, register-resident, AVX2
-    RegisterSse41,     // u16x8, register-resident, SSE
-    Register128,       // u16x8, register-resident, generic 128-bit
-    ShuffleAvx512,     // distance-in-register, states-in-memory, AVX-512
-    ShuffleAvx2,       // distance-in-register, states-in-memory, AVX2
-    ShuffleSse41,      // distance-in-register, states-in-memory, SSE4.1
-    Shuffle128,        // distance-in-register, states-in-memory, generic 128-bit
-    PermuteAvx512,     // wide distance-in-register, states-in-memory, AVX-512
-    OctLookupAvx512,   // SIMD butterfly, in-memory, AVX-512
-    OctLookupAvx2,     // SIMD butterfly, in-memory, AVX2
-    OctLookupSse41,    // SIMD butterfly, in-memory, SSE4.1
-    OctLookup128,      // SIMD butterfly, in-memory, generic 128-bit
+    RegisterAvx512,  // u16x32, fully register, AVX-512
+    RegisterAvx2,    // u16x16, register-resident, AVX2
+    RegisterSse41,   // u16x8, register-resident, SSE
+    Register128,     // u16x8, register-resident, generic 128-bit
+    ShuffleAvx512,   // distance-in-register, states-in-memory, AVX-512
+    ShuffleAvx2,     // distance-in-register, states-in-memory, AVX2
+    ShuffleSse41,    // distance-in-register, states-in-memory, SSE4.1
+    Shuffle128,      // distance-in-register, states-in-memory, generic 128-bit
+    PermuteAvx512,   // wide distance-in-register, states-in-memory, AVX-512
+    OctLookupAvx512, // SIMD butterfly, in-memory, AVX-512
+    OctLookupAvx2,   // SIMD butterfly, in-memory, AVX2
+    OctLookupSse41,  // SIMD butterfly, in-memory, SSE4.1
+    OctLookup128,    // SIMD butterfly, in-memory, generic 128-bit
 }
 
 #[doc(hidden)]
@@ -128,7 +128,10 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
 
         let rate = RATE;
         let order = ORDER;
-        let poly_table: Vec<u8> = util::conv_poly_table(rate, order, polys).iter().map(|&p| p as u8).collect();
+        let poly_table: Vec<u8> = util::conv_poly_table(rate, order, polys)
+            .iter()
+            .map(|&p| p as u8)
+            .collect();
 
         let cap = Self::history_cap();
 
@@ -343,30 +346,22 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
-            if const { RATE <= 3 }
-            {
-                if register_512_ok && self.enable_arch.avx512
-                {
+            if const { RATE <= 3 } {
+                if register_512_ok && self.enable_arch.avx512 {
                     unsafe { self.decode_body_register_avx512(distance_fill, num_encoded_bits, decoded) };
-                } else if register_256_ok && self.enable_arch.avx2
-                {
+                } else if register_256_ok && self.enable_arch.avx2 {
                     unsafe { self.decode_body_register_avx2(distance_fill, num_encoded_bits, decoded) };
-                } else if register_128_ok && self.enable_arch.sse41
-                {
+                } else if register_128_ok && self.enable_arch.sse41 {
                     unsafe { self.decode_body_register_sse41(distance_fill, num_encoded_bits, decoded) };
-                } else if register_128_ok
-                {
+                } else if register_128_ok {
                     self.decode_body_register::<Lane128>(distance_fill, num_encoded_bits, decoded);
                 } else if permute_512_ok && self.enable_arch.avx512 {
                     unsafe { self.decode_body_permute_avx512(distance_fill, num_encoded_bits, decoded) };
-                } else if shuffle_512_ok && self.enable_arch.avx512
-                {
+                } else if shuffle_512_ok && self.enable_arch.avx512 {
                     unsafe { self.decode_body_shuffle_avx512(distance_fill, num_encoded_bits, decoded) };
-                } else if shuffle_256_ok && self.enable_arch.avx2
-                {
+                } else if shuffle_256_ok && self.enable_arch.avx2 {
                     unsafe { self.decode_body_shuffle_avx2(distance_fill, num_encoded_bits, decoded) };
-                } else if shuffle_128_ok && self.enable_arch.sse41
-                {
+                } else if shuffle_128_ok && self.enable_arch.sse41 {
                     unsafe { self.decode_body_shuffle_sse41(distance_fill, num_encoded_bits, decoded) };
                 } else {
                     self.decode_body_shuffle::<Lane128>(distance_fill, num_encoded_bits, decoded);
@@ -452,7 +447,10 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         num_encoded_bits: usize,
         decoded: &mut BitWriter,
     ) {
-        debug_assert!(Self::num_survivors() >= L::LANES, "oct lookup decoder requires wider order");
+        debug_assert!(
+            Self::num_survivors() >= L::LANES,
+            "oct lookup decoder requires wider order"
+        );
 
         // the octlookup decoder is closest to the portable/scalar decoder, but we look up 8
         //   state distances at a time (16 on wider archs). everything else is roughly the same but
@@ -505,7 +503,10 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         num_encoded_bits: usize,
         decoded: &mut BitWriter,
     ) {
-        debug_assert!(Self::num_survivors() >= L::LANES, "shuffle decoder requires wider order");
+        debug_assert!(
+            Self::num_survivors() >= L::LANES,
+            "shuffle decoder requires wider order"
+        );
         debug_assert!(RATE <= 3, "shuffle decoder requires rate<=3");
 
         // the shuffle decoder loads the state distances into a register and then masks/shuffles
@@ -556,7 +557,10 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         num_encoded_bits: usize,
         decoded: &mut BitWriter,
     ) {
-        debug_assert!(Self::num_survivors() >= L::LANES, "permute decoder requires wider order");
+        debug_assert!(
+            Self::num_survivors() >= L::LANES,
+            "permute decoder requires wider order"
+        );
         debug_assert!(RATE <= 6, "permute decoder requires rate<=6");
 
         // the permute decoder takes advantage of special vectorized permute instructions to
@@ -662,13 +666,21 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
 
         // now unload from register back to self.previous_errors
         for register in 0..num_registers {
-            unsafe { L::store(self.previous_errors.as_mut_ptr().add(register * L::LANES), prev[register]) };
+            unsafe {
+                L::store(
+                    self.previous_errors.as_mut_ptr().add(register * L::LANES),
+                    prev[register],
+                )
+            };
         }
     }
 
     #[inline(always)]
     fn fill_next_distances_register(distance_fill: &mut ConvolutionalError) -> u8x32 {
-        debug_assert!(RATE >= 2 && RATE <= 3, "fill_next_distances_register is rate<=3 only (got rate {RATE})");
+        debug_assert!(
+            RATE >= 2 && RATE <= 3,
+            "fill_next_distances_register is rate<=3 only (got rate {RATE})"
+        );
 
         let d = match distance_fill {
             ConvolutionalError::Soft(encoded) => {
@@ -682,10 +694,11 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
         };
         let lo: u8x16 = unsafe { core::mem::transmute(d) };
+        #[rustfmt::skip]
         simd_swizzle!(
             lo,
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         )
     }
 
@@ -791,7 +804,12 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
     }
 
     #[inline]
-    fn process_history_register<L: RegisterLane>(&mut self, prev: &mut [L::Vec], num_registers: usize, bit_writer: &mut BitWriter) {
+    fn process_history_register<L: RegisterLane>(
+        &mut self,
+        prev: &mut [L::Vec],
+        num_registers: usize,
+        bit_writer: &mut BitWriter,
+    ) {
         if self.advance_history() {
             let renorm_due = self.renormalize_counter == Self::renormalize_interval();
             let traceback_due = self.history_len == Self::history_cap();
@@ -825,8 +843,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         self.renormalize_counter += 1;
         self.history_len += 1;
 
-        self.renormalize_counter == Self::renormalize_interval()
-            || self.history_len == Self::history_cap()
+        self.renormalize_counter == Self::renormalize_interval() || self.history_len == Self::history_cap()
     }
 
     fn process_history_advance<L: MemoryLane>(&mut self, step: u32, bit_writer: &mut BitWriter) {
@@ -872,7 +889,12 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
 
         // tail case (step != 1)
         let m = self.errors.iter().step_by(step as usize).min().unwrap_or(&u16::MAX);
-        let pos = self.errors.iter().step_by(step as usize).position(|&d| d == *m).unwrap_or(0);
+        let pos = self
+            .errors
+            .iter()
+            .step_by(step as usize)
+            .position(|&d| d == *m)
+            .unwrap_or(0);
         (pos * step as usize) as u16
     }
 
@@ -881,12 +903,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         self.errors.iter().position(|&d| d == *m).unwrap_or(0) as u16
     }
 
-    fn traceback(
-        &mut self,
-        init_best_path: u16,
-        min_traceback_length: u32,
-        bit_writer: &mut BitWriter,
-    ) {
+    fn traceback(&mut self, init_best_path: u16, min_traceback_length: u32, bit_writer: &mut BitWriter) {
         let stride = Self::hist_stride();
         let mut index = self.history_index;
         let mut best_path = init_best_path;
@@ -912,11 +929,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         // for the first `min_traceback_length` bits, we won't actually decode anything
         // these bits haven't converged yet
         for _ in 0..min_traceback_length {
-            index = if index == 0 {
-                cap - 1
-            } else {
-                index - 1
-            };
+            index = if index == 0 { cap - 1 } else { index - 1 };
 
             let bit = survivor_bit(index, best_path);
             let reg_bit = bit.wrapping_neg() & num_survivors;
@@ -926,11 +939,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         // for the remaining bits, the path has converged, and we can safely decode
         let num_decodes = self.history_len - min_traceback_length as usize;
         for decoded in self.decode_buf.iter_mut().take(num_decodes) {
-            index = if index == 0 {
-                cap - 1
-            } else {
-                index - 1
-            };
+            index = if index == 0 { cap - 1 } else { index - 1 };
 
             let bit = survivor_bit(index, best_path);
             let reg_bit = bit.wrapping_neg() & num_survivors;
@@ -973,10 +982,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
                         register_512_ok,
                         "ForcedPath::RegisterAvx512 not instantiable at rate={RATE} order={ORDER} (needs order 7..=10, rate<=3)"
                     );
-                    assert!(
-                        self.enable_arch.avx512,
-                        "ForcedPath::RegisterAvx512 needs AVX-512"
-                    );
+                    assert!(self.enable_arch.avx512, "ForcedPath::RegisterAvx512 needs AVX-512");
                     assert!(
                         !self.distance_shuffle.shuffle32.is_empty(),
                         "ForcedPath::RegisterAvx512 needs shuffle32 geometry (rate<=3) at order={ORDER}"
@@ -988,15 +994,12 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::RegisterAvx2 => {
-                if const {RATE <= 3} {
+                if const { RATE <= 3 } {
                     assert!(
                         register_256_ok,
                         "ForcedPath::RegisterAvx2 not instantiable at rate={RATE} order={ORDER} (needs order 6..=9, rate<=3)"
                     );
-                    assert!(
-                        self.enable_arch.avx2,
-                        "ForcedPath::RegisterAvx2 needs AVX2"
-                    );
+                    assert!(self.enable_arch.avx2, "ForcedPath::RegisterAvx2 needs AVX2");
                     assert!(
                         !self.distance_shuffle.shuffle16.is_empty(),
                         "ForcedPath::RegisterAvx2 needs shuffle16 geometry (rate<=3) at order={ORDER}"
@@ -1008,22 +1011,19 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::RegisterSse41 => {
-                if const {RATE <= 3} {
+                if const { RATE <= 3 } {
                     assert!(
                         register_128_ok,
                         "ForcedPath::RegisterSse41 not instantiable at rate={RATE} order={ORDER} (needs order 5..=8, rate<=3)"
                     );
-                    assert!(
-                        self.enable_arch.sse41,
-                        "ForcedPath::RegisterSse41 needs SSE4.1"
-                    );
+                    assert!(self.enable_arch.sse41, "ForcedPath::RegisterSse41 needs SSE4.1");
                     unsafe { self.decode_body_register_sse41(distance_fill, num_encoded_bits, decoded) };
                 } else {
                     panic!("ForcedPath::RegisterSse41 not instantiable at rate={RATE} order={ORDER} (needs order 5..=8, rate<=3)");
                 }
             }
             ForcedPath::Register128 => {
-                if const {RATE <= 3} {
+                if const { RATE <= 3 } {
                     assert!(
                         register_128_ok,
                         "ForcedPath::Register128 not instantiable at rate={RATE} order={ORDER} (needs order 5..=8, rate<=3)"
@@ -1035,11 +1035,8 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::ShuffleAvx512 => {
-                if const {RATE <= 3} {
-                    assert!(
-                        self.enable_arch.avx512,
-                        "ForcedPath::ShuffleAvx512 needs AVX-512"
-                    );
+                if const { RATE <= 3 } {
+                    assert!(self.enable_arch.avx512, "ForcedPath::ShuffleAvx512 needs AVX-512");
                     assert!(
                         !self.distance_shuffle.shuffle32.is_empty(),
                         "ForcedPath::ShuffleAvx512 geometry unavailable at rate={RATE} (needs rate<=3)"
@@ -1055,11 +1052,8 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::ShuffleAvx2 => {
-                if const {RATE <= 3} {
-                    assert!(
-                        self.enable_arch.avx2,
-                        "ForcedPath::ShuffleAvx2 needs AVX2"
-                    );
+                if const { RATE <= 3 } {
+                    assert!(self.enable_arch.avx2, "ForcedPath::ShuffleAvx2 needs AVX2");
                     assert!(
                         !self.distance_shuffle.shuffle16.is_empty(),
                         "ForcedPath::ShuffleAvx2 geometry unavailable at rate={RATE} (needs rate<=3)"
@@ -1075,11 +1069,8 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::ShuffleSse41 => {
-                if const {RATE <= 3} {
-                    assert!(
-                        self.enable_arch.sse41,
-                        "ForcedPath::ShuffleSse41 needs SSE4.1"
-                    );
+                if const { RATE <= 3 } {
+                    assert!(self.enable_arch.sse41, "ForcedPath::ShuffleSse41 needs SSE4.1");
                     assert!(
                         RATE <= 3 && !self.distance_shuffle.shuffle8.is_empty(),
                         "ForcedPath::ShuffleSse41 geometry unavailable at rate={RATE} (needs rate<=3)"
@@ -1094,7 +1085,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
                 }
             }
             ForcedPath::Shuffle128 => {
-                if const {RATE <= 3} {
+                if const { RATE <= 3 } {
                     assert!(
                         RATE <= 3 && !self.distance_shuffle.shuffle8.is_empty(),
                         "ForcedPath::Shuffle128 geometry unavailable at rate={RATE} (needs rate<=3)"
@@ -1111,10 +1102,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::PermuteAvx512 => {
                 if const { RATE <= 6 } {
-                    assert!(
-                        self.enable_arch.avx512,
-                        "ForcedPath::PermuteAvx512 needs AVX-512"
-                    );
+                    assert!(self.enable_arch.avx512, "ForcedPath::PermuteAvx512 needs AVX-512");
                     assert!(
                         Self::num_survivors() >= Lane512::LANES,
                         "ForcedPath::PermuteAvx512 requires wider order"
@@ -1126,10 +1114,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::OctLookupAvx512 => {
-                assert!(
-                    self.enable_arch.avx512,
-                    "ForcedPath::OctLookupAvx512 needs AVX-512"
-                );
+                assert!(self.enable_arch.avx512, "ForcedPath::OctLookupAvx512 needs AVX-512");
                 assert!(
                     Self::num_survivors() >= Lane512::LANES,
                     "ForcedPath::OctLookupAvx512 requires wider order"
@@ -1138,10 +1123,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::OctLookupAvx2 => {
-                assert!(
-                    self.enable_arch.avx2,
-                    "ForcedPath::OctLookupAvx2 needs AVX2"
-                );
+                assert!(self.enable_arch.avx2, "ForcedPath::OctLookupAvx2 needs AVX2");
                 assert!(
                     Self::num_survivors() >= Lane256::LANES,
                     "ForcedPath::OctLookupAvx2 requires wider order"
@@ -1150,10 +1132,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             ForcedPath::OctLookupSse41 => {
-                assert!(
-                    self.enable_arch.sse41,
-                    "ForcedPath::OctLookupSse41 needs SSE4.1"
-                );
+                assert!(self.enable_arch.sse41, "ForcedPath::OctLookupSse41 needs SSE4.1");
                 assert!(
                     Self::num_survivors() >= Lane128::LANES,
                     "ForcedPath::OctLookupSse41 requires wider order"
@@ -1167,7 +1146,6 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             other => panic!("ForcedPath::{other:?} is x86-only; not available on this target"),
         }
     }
-
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl")]
@@ -1325,7 +1303,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
 mod tests {
     use super::{DecoderArch, ForcedPath, SimdDecoder};
     use crate::convolutional::sim::{bpsk_params, flip_with_interval, Testbench};
-    use crate::convolutional::{Decoder, DecodeError, Encoder};
+    use crate::convolutional::{DecodeError, Decoder, Encoder};
     use crate::util::Rng;
 
     #[derive(Clone, Copy, Debug)]
@@ -1384,7 +1362,6 @@ mod tests {
             | ForcedPath::OctLookupAvx512 => has_avx512,
         }
     }
-
 
     #[test]
     #[should_panic(expected = "generator polynomials")]
@@ -1450,15 +1427,18 @@ mod tests {
         } else {
             let mut soft = vec![0u8; enc_bits];
             for (i, s) in soft.iter_mut().enumerate() {
-                *s = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 { 255 } else { 0 };
+                *s = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 {
+                    255
+                } else {
+                    0
+                };
             }
             simd.decode_soft(&soft, &mut simd_out).unwrap();
         }
 
         let mode = if hard { "hard" } else { "soft" };
         assert_eq!(
-            &simd_out,
-            &msg,
+            &simd_out, &msg,
             "SIMD decode wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
              clean={clean} seed={seed} arch={arch:?}"
         );
@@ -1563,15 +1543,18 @@ mod tests {
         } else {
             let mut soft = vec![0u8; enc_bits];
             for (i, s) in soft.iter_mut().enumerate() {
-                *s = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 { 255 } else { 0 };
+                *s = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 {
+                    255
+                } else {
+                    0
+                };
             }
             simd.decode_soft(&soft, &mut simd_out).unwrap();
         }
 
         let mode = if hard { "hard" } else { "soft" };
         assert_eq!(
-            &simd_out,
-            &msg,
+            &simd_out, &msg,
             "SIMD decode wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
              clean={clean} seed={seed} path={path:?}"
         );
@@ -1590,6 +1573,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_oct_lookup_avx512() {
         assert_decode_path_matches_all::<2, 6>(&[0o65, 0o57], ForcedPath::OctLookupAvx512);
@@ -1603,6 +1587,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_oct_lookup_avx2() {
         assert_decode_path_matches_all::<2, 5>(&[0o27, 0o23], ForcedPath::OctLookupAvx2);
@@ -1617,6 +1602,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_oct_lookup_sse() {
         assert_decode_path_matches_all::<2, 4>(&[0o17, 0o13], ForcedPath::OctLookupSse41);
@@ -1631,6 +1617,7 @@ mod tests {
         assert_decode_path_matches_all::<8, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], ForcedPath::OctLookupSse41);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn path_oct_lookup_128() {
         assert_decode_path_matches_all::<2, 4>(&[0o17, 0o13], ForcedPath::OctLookup128);
@@ -1646,6 +1633,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_shuffle_avx512() {
         assert_decode_path_matches_all::<2, 6>(&[0o65, 0o57], ForcedPath::ShuffleAvx512);
@@ -1694,6 +1682,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_permute_avx512() {
         assert_decode_path_matches_all::<2, 7>(&[0o155, 0o117], ForcedPath::PermuteAvx512);
@@ -1847,7 +1836,10 @@ mod tests {
             eprintln!("SKIP forcing_permute_avx512_panics: host lacks AVX-512");
             panic!("not instantiable");
         }
-        try_decode_path::<7, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145], ForcedPath::PermuteAvx512);
+        try_decode_path::<7, 7>(
+            &[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145],
+            ForcedPath::PermuteAvx512,
+        );
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -1917,17 +1909,18 @@ mod tests {
 
         let mode = if hard { "hard" } else { "soft" };
         assert_eq!(
-            &scalar_out,
-            &simd_out,
+            &scalar_out, &simd_out,
             "{RATE}/{ORDER} {path:?} {mode}: SIMD output differs from scalar at {eb_n0_db}dB over {bytes}B."
         );
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_2_5() {
         assert_simd_matches_scalar_noise::<2, 5>(&[0o027, 0o023], None, 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_2_5() {
         assert_simd_matches_scalar_noise::<2, 5>(&[0o027, 0o023], Some(ForcedPath::OctLookupAvx2), 3.0, 300_000, false);
@@ -1935,6 +1928,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 5>(&[0o027, 0o023], Some(ForcedPath::OctLookup128), 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_shuffle_2_5() {
         assert_simd_matches_scalar_noise::<2, 5>(&[0o027, 0o023], Some(ForcedPath::ShuffleAvx2), 3.0, 300_000, false);
@@ -1942,17 +1936,20 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 5>(&[0o027, 0o023], Some(ForcedPath::Shuffle128), 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_register_2_5() {
         assert_simd_matches_scalar_noise::<2, 5>(&[0o027, 0o023], Some(ForcedPath::RegisterSse41), 3.0, 300_000, false);
         assert_simd_matches_scalar_noise::<2, 5>(&[0o027, 0o023], Some(ForcedPath::Register128), 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_2_6() {
         assert_simd_matches_scalar_noise::<2, 6>(&[0o065, 0o057], None, 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_2_6() {
         assert_simd_matches_scalar_noise::<2, 6>(&[0o065, 0o057], Some(ForcedPath::OctLookupAvx512), 3.0, 300_000, false);
@@ -1961,6 +1958,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 6>(&[0o065, 0o057], Some(ForcedPath::OctLookup128), 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_shuffle_2_6() {
         assert_simd_matches_scalar_noise::<2, 6>(&[0o065, 0o057], Some(ForcedPath::ShuffleAvx512), 3.0, 300_000, false);
@@ -1969,11 +1967,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 6>(&[0o065, 0o057], Some(ForcedPath::Shuffle128), 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_2_6() {
         assert_simd_matches_scalar_noise::<2, 6>(&[0o065, 0o057], Some(ForcedPath::PermuteAvx512), 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_register_2_6() {
         assert_simd_matches_scalar_noise::<2, 6>(&[0o065, 0o057], Some(ForcedPath::RegisterAvx2), 3.0, 300_000, false);
@@ -1981,11 +1981,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 6>(&[0o065, 0o057], Some(ForcedPath::Register128), 3.0, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], None, 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookupAvx512), 2.5, 300_000, false);
@@ -1994,6 +1996,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookup128), 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_shuffle_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::ShuffleAvx512), 2.5, 300_000, false);
@@ -2002,11 +2005,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::Shuffle128), 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::PermuteAvx512), 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_register_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::RegisterAvx512), 2.5, 300_000, false);
@@ -2015,11 +2020,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::Register128), 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_dispatch_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], None, 4.0, 300_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_oct_lookup_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookupAvx512), 4.0, 300_000, true);
@@ -2028,6 +2035,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookup128), 4.0, 300_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_shuffle_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::ShuffleAvx512), 4.0, 300_000, true);
@@ -2036,11 +2044,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::Shuffle128), 4.0, 300_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_permute_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::PermuteAvx512), 4.0, 300_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_register_2_7() {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::RegisterAvx512), 4.0, 300_000, true);
@@ -2049,11 +2059,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 7>(&[0o155, 0o117], Some(ForcedPath::Register128), 4.0, 300_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_2_8() {
         assert_simd_matches_scalar_noise::<2, 8>(&[0o367, 0o225], None, 2.5, 200_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_2_8() {
         assert_simd_matches_scalar_noise::<2, 8>(&[0o367, 0o225], Some(ForcedPath::OctLookupAvx512), 2.5, 200_000, false);
@@ -2062,6 +2074,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 8>(&[0o367, 0o225], Some(ForcedPath::OctLookup128), 2.5, 200_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_shuffle_2_8() {
         assert_simd_matches_scalar_noise::<2, 8>(&[0o367, 0o225], Some(ForcedPath::ShuffleAvx512), 2.5, 200_000, false);
@@ -2070,11 +2083,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 8>(&[0o367, 0o225], Some(ForcedPath::Shuffle128), 2.5, 200_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_2_8() {
         assert_simd_matches_scalar_noise::<2, 8>(&[0o367, 0o225], Some(ForcedPath::PermuteAvx512), 2.5, 200_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_register_2_8() {
         assert_simd_matches_scalar_noise::<2, 8>(&[0o367, 0o225], Some(ForcedPath::RegisterAvx512), 2.5, 200_000, false);
@@ -2083,11 +2098,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 8>(&[0o367, 0o225], Some(ForcedPath::Register128), 2.5, 200_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], None, 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookupAvx512), 2.0, 100_000, false);
@@ -2096,6 +2113,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookup128), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_shuffle_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::ShuffleAvx512), 2.0, 100_000, false);
@@ -2104,22 +2122,26 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::Shuffle128), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::PermuteAvx512), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_register_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::RegisterAvx512), 2.0, 100_000, false);
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::RegisterAvx2), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_dispatch_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], None, 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_oct_lookup_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookupAvx512), 3.5, 100_000, true);
@@ -2128,6 +2150,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookup128), 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_shuffle_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::ShuffleAvx512), 3.5, 100_000, true);
@@ -2136,22 +2159,26 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::Shuffle128), 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_permute_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::PermuteAvx512), 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_register_2_9() {
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::RegisterAvx512), 3.5, 100_000, true);
         assert_simd_matches_scalar_noise::<2, 9>(&[0o657, 0o435], Some(ForcedPath::RegisterAvx2), 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_2_15() {
         assert_simd_matches_scalar_noise::<2, 15>(&[0o56711, 0o75063], None, 1.2, 5_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_2_15() {
         assert_simd_matches_scalar_noise::<2, 15>(&[0o56711, 0o75063], Some(ForcedPath::OctLookupAvx512), 1.2, 5_000, false);
@@ -2160,16 +2187,19 @@ mod tests {
         assert_simd_matches_scalar_noise::<2, 15>(&[0o56711, 0o75063], Some(ForcedPath::OctLookup128), 1.2, 5_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_2_15() {
         assert_simd_matches_scalar_noise::<2, 15>(&[0o56711, 0o75063], Some(ForcedPath::PermuteAvx512), 1.2, 5_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_3_7() {
         assert_simd_matches_scalar_noise::<3, 7>(&[0o175, 0o145, 0o133], None, 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_3_7() {
         assert_simd_matches_scalar_noise::<3, 7>(&[0o175, 0o145, 0o133], Some(ForcedPath::OctLookupAvx512), 2.5, 300_000, false);
@@ -2178,6 +2208,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<3, 7>(&[0o175, 0o145, 0o133], Some(ForcedPath::OctLookup128), 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_shuffle_3_7() {
         assert_simd_matches_scalar_noise::<3, 7>(&[0o175, 0o145, 0o133], Some(ForcedPath::ShuffleAvx512), 2.5, 300_000, false);
@@ -2186,22 +2217,26 @@ mod tests {
         assert_simd_matches_scalar_noise::<3, 7>(&[0o175, 0o145, 0o133], Some(ForcedPath::Shuffle128), 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_3_7() {
         assert_simd_matches_scalar_noise::<3, 7>(&[0o175, 0o145, 0o133], Some(ForcedPath::PermuteAvx512), 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_register_3_7() {
         assert_simd_matches_scalar_noise::<3, 7>(&[0o175, 0o145, 0o133], Some(ForcedPath::RegisterAvx512), 2.5, 300_000, false);
         assert_simd_matches_scalar_noise::<3, 7>(&[0o175, 0o145, 0o133], Some(ForcedPath::RegisterAvx2), 2.5, 300_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], None, 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookupAvx512), 2.0, 100_000, false);
@@ -2210,6 +2245,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookup128), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_shuffle_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::ShuffleAvx512), 2.0, 100_000, false);
@@ -2218,22 +2254,26 @@ mod tests {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::Shuffle128), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::PermuteAvx512), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_register_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::RegisterAvx512), 2.0, 100_000, false);
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::RegisterAvx2), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_dispatch_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], None, 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_oct_lookup_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookupAvx512), 3.5, 100_000, true);
@@ -2242,6 +2282,7 @@ mod tests {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookup128), 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_shuffle_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::ShuffleAvx512), 3.5, 100_000, true);
@@ -2250,22 +2291,26 @@ mod tests {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::Shuffle128), 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_permute_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::PermuteAvx512), 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_register_3_9() {
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::RegisterAvx512), 3.5, 100_000, true);
         assert_simd_matches_scalar_noise::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::RegisterAvx2), 3.5, 100_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_4_7() {
         assert_simd_matches_scalar_noise::<4, 7>(&[0o133, 0o175, 0o107, 0o101], None, 2.0, 150_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_4_7() {
         assert_simd_matches_scalar_noise::<4, 7>(&[0o133, 0o175, 0o107, 0o101], Some(ForcedPath::OctLookupAvx512), 2.0, 150_000, false);
@@ -2274,16 +2319,19 @@ mod tests {
         assert_simd_matches_scalar_noise::<4, 7>(&[0o133, 0o175, 0o107, 0o101], Some(ForcedPath::OctLookup128), 2.0, 150_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_4_7() {
         assert_simd_matches_scalar_noise::<4, 7>(&[0o133, 0o175, 0o107, 0o101], Some(ForcedPath::PermuteAvx512), 2.0, 150_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_5_7() {
         assert_simd_matches_scalar_noise::<5, 7>(&[0o175, 0o145, 0o133, 0o117, 0o127], None, 2.0, 150_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_5_7() {
         assert_simd_matches_scalar_noise::<5, 7>(&[0o175, 0o145, 0o133, 0o117, 0o127], Some(ForcedPath::OctLookupAvx512), 2.0, 150_000, false);
@@ -2292,16 +2340,19 @@ mod tests {
         assert_simd_matches_scalar_noise::<5, 7>(&[0o175, 0o145, 0o133, 0o117, 0o127], Some(ForcedPath::OctLookup128), 2.0, 150_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_5_7() {
         assert_simd_matches_scalar_noise::<5, 7>(&[0o175, 0o145, 0o133, 0o117, 0o127], Some(ForcedPath::PermuteAvx512), 2.0, 150_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_6_7() {
         assert_simd_matches_scalar_noise::<6, 7>(&[0o111, 0o127, 0o133, 0o167, 0o173, 0o175], None, 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_6_7() {
         assert_simd_matches_scalar_noise::<6, 7>(&[0o111, 0o127, 0o133, 0o167, 0o173, 0o175], Some(ForcedPath::OctLookupAvx512), 2.0, 100_000, false);
@@ -2310,16 +2361,19 @@ mod tests {
         assert_simd_matches_scalar_noise::<6, 7>(&[0o111, 0o127, 0o133, 0o167, 0o173, 0o175], Some(ForcedPath::OctLookup128), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_6_7() {
         assert_simd_matches_scalar_noise::<6, 7>(&[0o111, 0o127, 0o133, 0o167, 0o173, 0o175], Some(ForcedPath::PermuteAvx512), 2.0, 100_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_6_15() {
         assert_simd_matches_scalar_noise::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], None, 0.5, 5_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_6_15() {
         assert_simd_matches_scalar_noise::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookupAvx512), 0.5, 5_000, false);
@@ -2328,16 +2382,19 @@ mod tests {
         assert_simd_matches_scalar_noise::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookup128), 0.5, 5_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_permute_6_15() {
         assert_simd_matches_scalar_noise::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::PermuteAvx512), 0.5, 5_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_dispatch_6_15() {
         assert_simd_matches_scalar_noise::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], None, 1.5, 5_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_oct_lookup_6_15() {
         assert_simd_matches_scalar_noise::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookupAvx512), 1.5, 5_000, true);
@@ -2346,15 +2403,19 @@ mod tests {
         assert_simd_matches_scalar_noise::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookup128), 1.5, 5_000, true);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_hard_permute_6_15() {
         assert_simd_matches_scalar_noise::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::PermuteAvx512), 1.5, 5_000, true);
     }
+
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_7_7() {
         assert_simd_matches_scalar_noise::<7, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145], None, 2.0, 50_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_7_7() {
         assert_simd_matches_scalar_noise::<7, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145], Some(ForcedPath::OctLookupAvx512), 2.0, 50_000, false);
@@ -2363,11 +2424,13 @@ mod tests {
         assert_simd_matches_scalar_noise::<7, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145], Some(ForcedPath::OctLookup128), 2.0, 50_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_dispatch_8_7() {
         assert_simd_matches_scalar_noise::<8, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], None, 2.0, 50_000, false);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn simd_matches_scalar_noise_oct_lookup_8_7() {
         assert_simd_matches_scalar_noise::<8, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], Some(ForcedPath::OctLookupAvx512), 2.0, 50_000, false);

@@ -17,19 +17,19 @@
 //! The codec is a Rust translation of
 //! [libcorrect](https://github.com/quiet/libcorrect).
 
+mod decoder;
+mod encoder;
 pub(crate) mod field;
 pub(crate) mod polynomial;
-mod encoder;
-mod decoder;
 #[cfg(test)]
 mod tests;
 
 pub mod ccsds;
 
 #[doc(inline)]
-pub use encoder::{EncodeError, Encoder};
-#[doc(inline)]
 pub use decoder::{DecodeError, Decoder};
+#[doc(inline)]
+pub use encoder::{EncodeError, Encoder};
 
 use field::FieldOperation;
 

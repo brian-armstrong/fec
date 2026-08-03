@@ -3,9 +3,7 @@
 use std::fmt;
 
 use super::field::{Field, FieldElement, FieldLogarithm, FieldOperation};
-use super::polynomial::{
-    polynomial_mod, Polynomial, reed_solomon_build_generator,
-};
+use super::polynomial::{polynomial_mod, reed_solomon_build_generator, Polynomial};
 
 /// Error returned by [`Encoder::encode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,8 +225,8 @@ mod tests {
         assert_eq!(&encoded[..223], &msg[..]);
         // the 32 parity bytes
         let parity: [u8; 32] = [
-            250, 21, 66, 72, 244, 243, 22, 41, 243, 8, 201, 34, 14, 179, 56, 133, 151, 84, 252,
-            148, 217, 13, 168, 24, 78, 91, 75, 252, 226, 117, 76, 40,
+            250, 21, 66, 72, 244, 243, 22, 41, 243, 8, 201, 34, 14, 179, 56, 133, 151, 84, 252, 148, 217, 13, 168, 24,
+            78, 91, 75, 252, 226, 117, 76, 40,
         ];
         assert_eq!(&encoded[223..], &parity);
     }
@@ -241,8 +239,8 @@ mod tests {
         assert_eq!(enc.encode(&msg, &mut encoded), Ok(255));
 
         let expected_head: [u8; 37] = [
-            1, 2, 3, 4, 5, 205, 175, 54, 99, 247, 95, 68, 232, 240, 77, 62, 244, 127, 118, 152,
-            110, 225, 154, 248, 117, 90, 78, 233, 19, 151, 103, 160, 78, 181, 80, 154, 240,
+            1, 2, 3, 4, 5, 205, 175, 54, 99, 247, 95, 68, 232, 240, 77, 62, 244, 127, 118, 152, 110, 225, 154, 248,
+            117, 90, 78, 233, 19, 151, 103, 160, 78, 181, 80, 154, 240,
         ];
         // first 5 are the message, next 32 are parity; the rest are zero
         assert_eq!(&encoded[..37], &expected_head);
@@ -257,8 +255,8 @@ mod tests {
         assert_eq!(enc.encode(&msg, &mut encoded), Ok(255));
 
         let expected_head: [u8; 33] = [
-            171, 47, 46, 31, 254, 6, 84, 239, 205, 64, 128, 170, 100, 165, 105, 196, 228, 187,
-            196, 104, 6, 182, 9, 245, 98, 231, 116, 72, 40, 189, 106, 250, 11,
+            171, 47, 46, 31, 254, 6, 84, 239, 205, 64, 128, 170, 100, 165, 105, 196, 228, 187, 196, 104, 6, 182, 9,
+            245, 98, 231, 116, 72, 40, 189, 106, 250, 11,
         ];
         assert_eq!(&encoded[..33], &expected_head);
         assert!(encoded[33..].iter().all(|&b| b == 0));

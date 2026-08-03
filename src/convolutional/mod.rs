@@ -24,10 +24,10 @@ mod decoder;
 mod encoder;
 mod error;
 pub mod sim;
-pub(crate) mod util;
 #[cfg(feature = "simd")]
 #[cfg_attr(docsrs, doc(cfg(feature = "simd")))]
 pub mod simd;
+pub(crate) mod util;
 
 #[doc(inline)]
 pub use self::decoder::Decoder;

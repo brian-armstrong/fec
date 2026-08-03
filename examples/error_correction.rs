@@ -32,9 +32,7 @@ fn main() {
     // Decode the corrupted data. The decoder recovers the original message.
     let mut decoded = vec![0u8; message.len()];
     let mut decoder = Decoder::new(2, 7, &polys);
-    decoder
-        .decode_hard(&encoded, enc_len, &mut decoded)
-        .expect("decode");
+    decoder.decode_hard(&encoded, enc_len, &mut decoded).expect("decode");
 
     println!("recovered: {:?}", String::from_utf8_lossy(&decoded));
     assert_eq!(decoded, message, "decoder failed to correct the errors");
