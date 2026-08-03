@@ -676,6 +676,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
     }
 
     #[inline(always)]
+    #[rustfmt::skip]
     fn fill_next_distances_register(distance_fill: &mut ConvolutionalError) -> u8x32 {
         debug_assert!(
             RATE >= 2 && RATE <= 3,
@@ -694,7 +695,6 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
             }
         };
         let lo: u8x16 = unsafe { core::mem::transmute(d) };
-        #[rustfmt::skip]
         simd_swizzle!(
             lo,
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
@@ -1645,6 +1645,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_shuffle_avx2() {
         assert_decode_path_matches_all::<2, 5>(&[0o27, 0o23], ForcedPath::ShuffleAvx2);
@@ -1657,6 +1658,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_shuffle_sse() {
         assert_decode_path_matches_all::<2, 4>(&[0o17, 0o13], ForcedPath::ShuffleSse41);
@@ -1669,6 +1671,7 @@ mod tests {
         assert_decode_path_matches_all::<3, 9>(&[0o755, 0o633, 0o447], ForcedPath::ShuffleSse41);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn path_shuffle_128() {
         assert_decode_path_matches_all::<2, 4>(&[0o17, 0o13], ForcedPath::Shuffle128);
@@ -1694,6 +1697,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_register_avx512() {
         assert_decode_path_matches_all::<2, 7>(&[0o155, 0o117], ForcedPath::RegisterAvx512);
@@ -1703,6 +1707,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_register_avx2() {
         assert_decode_path_matches_all::<2, 6>(&[0o65, 0o57], ForcedPath::RegisterAvx2);
@@ -1712,6 +1717,7 @@ mod tests {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[rustfmt::skip]
     #[test]
     fn path_register_sse() {
         assert_decode_path_matches_all::<2, 5>(&[0o27, 0o23], ForcedPath::RegisterSse41);
@@ -1720,6 +1726,7 @@ mod tests {
         assert_decode_path_matches_all::<2, 8>(&[0o367, 0o225], ForcedPath::RegisterSse41);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn path_register_128() {
         assert_decode_path_matches_all::<2, 5>(&[0o27, 0o23], ForcedPath::Register128);
