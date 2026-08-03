@@ -1,5 +1,8 @@
 # fec-shim
 
+[![Crates.io](https://img.shields.io/crates/v/fec-shim.svg)](https://crates.io/crates/fec-shim)
+[![CI](https://github.com/brian-armstrong/fec/actions/workflows/ci.yml/badge.svg)](https://github.com/brian-armstrong/fec/actions/workflows/ci.yml)
+
 A C-ABI shim over the [`fec`](https://crates.io/crates/fec) crate. It builds a
 `libfec.so` / `libfec.a` that a C program can link against as a **partial
 drop-in** for Phil Karn's [libfec](https://github.com/ka9q/libfec).

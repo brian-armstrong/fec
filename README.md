@@ -1,5 +1,9 @@
 # fec
 
+[![Crates.io](https://img.shields.io/crates/v/fec.svg)](https://crates.io/crates/fec)
+[![Docs.rs](https://docs.rs/fec/badge.svg)](https://docs.rs/fec)
+[![CI](https://github.com/brian-armstrong/fec/actions/workflows/ci.yml/badge.svg)](https://github.com/brian-armstrong/fec/actions/workflows/ci.yml)
+
 Forward error correction for SDR, space, and satellite applications.
 
 `fec` implements two error-correcting codes that show up throughout
@@ -77,10 +81,11 @@ For real spacecraft telemetry (dual-basis symbols on the wire), use
 
 The codes are **bit-compatible with [libfec](https://github.com/ka9q/libfec)**
 (Phil Karn, KA9Q), so `fec` can decode data Karn's library produced and
-vice versa. A companion shim crate exposes `fec` under libfec's C ABI
-(`init_rs_char`, `create_viterbi27`, `encode_rs_ccsds`, etc) as a drop-in for
-existing C codebases. With the `simd` feature enabled (requires nightly), this
-crate is **more performant** than either libcorrect or libfec on x86.
+vice versa. A companion shim crate, [`fec-shim`](https://crates.io/crates/fec-shim),
+exposes `fec` under libfec's C ABI (`init_rs_char`, `create_viterbi27`,
+`encode_rs_ccsds`, etc) as a drop-in for existing C codebases. With the `simd`
+feature enabled (requires nightly), this crate is **more performant** than either
+libcorrect or libfec on x86.
 
 ## Roadmap
 
