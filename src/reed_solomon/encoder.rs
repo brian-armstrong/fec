@@ -1,22 +1,37 @@
 // Reed-Solomon encoder, derived from libcorrect's encode.c.
 
+use std::fmt;
+
 use super::field::{Field, FieldElement, FieldLogarithm, FieldOperation};
 use super::polynomial::{
     polynomial_mod, Polynomial, reed_solomon_build_generator,
 };
 
-/// Error returned by [`RsEncoder::encode`].
+/// Error returned by [`Encoder::encode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EncodeError {
     /// The message was longer than the code's message capacity.
     MessageTooLong,
 }
 
+impl fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EncodeError::MessageTooLong => {
+                write!(f, "message is longer than the code's message capacity")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EncodeError {}
+
 /// Reed-Solomon encoder over GF(2^8).
-pub struct RsEncoder {
-    pub block_length: usize,
-    pub message_length: usize,
-    pub min_distance: usize,
+pub struct Encoder {
+    block_length: usize,
+    message_length: usize,
+    min_distance: usize,
 
     field: Field,
 
@@ -29,11 +44,12 @@ pub struct RsEncoder {
     encoded_remainder_order: usize,
 }
 
-impl RsEncoder {
+impl Encoder {
     /// Build an encoder for a (255, 255 - `num_roots`) Reed-Solomon code over
     /// GF(2^8). The block size is always 255 bytes with 8-bit symbols. The
-    /// resulting code can repair up to `num_roots / 2` corrupted bytes per block;
-    /// larger `num_roots` adds parity overhead and substantially slows decoding.
+    /// resulting code can repair up to `num_roots / 2` corrupted bytes per
+    /// block. A larger `num_roots` adds parity overhead and substantially slows
+    /// decoding.
     ///
     /// `primitive_polynomial` should be one of the `PRIMITIVE_POLYNOMIAL_*`
     /// constants. Sane values for `first_consecutive_root` and
@@ -44,7 +60,7 @@ impl RsEncoder {
         first_consecutive_root: FieldLogarithm,
         generator_root_gap: FieldLogarithm,
         num_roots: usize,
-    ) -> RsEncoder {
+    ) -> Encoder {
         let field = Field::new(primitive_polynomial);
 
         let block_length = 255usize;
@@ -67,7 +83,7 @@ impl RsEncoder {
         let encoded_polynomial = vec![0 as FieldElement; block_length];
         let encoded_remainder = vec![0 as FieldElement; block_length];
 
-        RsEncoder {
+        Encoder {
             block_length,
             message_length,
             min_distance,
@@ -82,12 +98,12 @@ impl RsEncoder {
     }
 
     /// Build an encoder for the standard CCSDS (255,223) Reed-Solomon code
-    /// (conventional-basis representation). Equivalent to `RsEncoder::new` with
+    /// (conventional-basis representation). Equivalent to `Encoder::new` with
     /// the CCSDS parameters. For the dual-basis representation used on the wire,
-    /// see [`RsEncoder::encode_ccsds_dual`].
-    pub fn new_ccsds() -> RsEncoder {
+    /// see [`Encoder::encode_ccsds_dual`].
+    pub fn new_ccsds() -> Encoder {
         use super::ccsds;
-        RsEncoder::new(
+        Encoder::new(
             ccsds::CCSDS_PRIMITIVE_POLYNOMIAL,
             ccsds::CCSDS_FIRST_CONSECUTIVE_ROOT,
             ccsds::CCSDS_GENERATOR_ROOT_GAP,
@@ -95,13 +111,30 @@ impl RsEncoder {
         )
     }
 
+    /// The block length in bytes, always 255 for this GF(2^8) code.
+    pub fn block_length(&self) -> usize {
+        self.block_length
+    }
+
+    /// The message capacity in bytes, `block_length - num_roots`.
+    pub fn message_length(&self) -> usize {
+        self.message_length
+    }
+
+    /// The number of parity symbols, `num_roots`. The code corrects up to
+    /// `min_distance / 2` byte errors per block.
+    pub fn min_distance(&self) -> usize {
+        self.min_distance
+    }
+
     /// Encode `msg` into `encoded` (message bytes followed by parity), returning
     /// the encoded block length (always 255) on success, or
     /// [`EncodeError::MessageTooLong`] if `msg` exceeds the message capacity.
     ///
-    /// `msg` may be shorter than the full payload (e.g. fewer than 223 bytes for
-    /// a (255, 223) code); short messages are encoded with virtual padding that
-    /// is not emitted. `encoded` must be at least `msg.len() + num_roots` bytes.
+    /// `msg` may be shorter than the full payload, for example fewer than 223
+    /// bytes for a (255, 223) code. Short messages are encoded with virtual
+    /// padding that is not emitted. `encoded` must be at least
+    /// `msg.len() + num_roots` bytes.
     pub fn encode(&mut self, msg: &[u8], encoded: &mut [u8]) -> Result<usize, EncodeError> {
         let msg_length = msg.len();
         if msg_length > self.message_length {
@@ -151,13 +184,13 @@ impl RsEncoder {
         Ok(self.block_length)
     }
 
-    /// Encode a CCSDS dual-basis message. `msg` holds dual-basis symbols (as they
-    /// appear on the wire); the 32 parity bytes are written to `parity`, also in
-    /// the dual basis. The message is transformed to the conventional basis,
-    /// encoded with this (CCSDS) code, and the parity transformed back.
+    /// Encode a CCSDS dual-basis message. `msg` holds dual-basis symbols, as
+    /// they appear on the wire. The 32 parity bytes are written to `parity`,
+    /// also in the dual basis. The message is transformed to the conventional
+    /// basis, encoded with this (CCSDS) code, and the parity transformed back.
     ///
     /// This encoder must have been built with the CCSDS parameters (see
-    /// [`RsEncoder::new_ccsds`]). `parity` must be at least 32 bytes.
+    /// [`Encoder::new_ccsds`]). `parity` must be at least 32 bytes.
     pub fn encode_ccsds_dual(&mut self, msg: &[u8], parity: &mut [u8]) -> Result<(), EncodeError> {
         use super::ccsds;
         if msg.len() > self.message_length {
@@ -185,7 +218,7 @@ mod tests {
 
     #[test]
     fn encode_full_message() {
-        let mut enc = RsEncoder::new(CCSDS, 1, 1, 32);
+        let mut enc = Encoder::new(CCSDS, 1, 1, 32);
         let msg: Vec<u8> = (0..223u16).map(|i| i as u8).collect();
         let mut encoded = vec![0u8; 255];
         assert_eq!(enc.encode(&msg, &mut encoded), Ok(255));
@@ -202,7 +235,7 @@ mod tests {
 
     #[test]
     fn encode_short_message() {
-        let mut enc = RsEncoder::new(CCSDS, 1, 1, 32);
+        let mut enc = Encoder::new(CCSDS, 1, 1, 32);
         let msg = [1u8, 2, 3, 4, 5];
         let mut encoded = vec![0u8; 255];
         assert_eq!(enc.encode(&msg, &mut encoded), Ok(255));
@@ -218,7 +251,7 @@ mod tests {
 
     #[test]
     fn encode_single_byte() {
-        let mut enc = RsEncoder::new(CCSDS, 1, 1, 32);
+        let mut enc = Encoder::new(CCSDS, 1, 1, 32);
         let msg = [0xABu8];
         let mut encoded = vec![0u8; 255];
         assert_eq!(enc.encode(&msg, &mut encoded), Ok(255));
@@ -234,7 +267,7 @@ mod tests {
     #[test]
     fn encode_zeros_gives_zero_parity() {
         // an all-zero message has an all-zero codeword (0 mod g = 0)
-        let mut enc = RsEncoder::new(CCSDS, 1, 1, 32);
+        let mut enc = Encoder::new(CCSDS, 1, 1, 32);
         let msg = [0u8; 10];
         let mut encoded = vec![0u8; 255];
         assert_eq!(enc.encode(&msg, &mut encoded), Ok(255));
@@ -243,7 +276,7 @@ mod tests {
 
     #[test]
     fn encode_rejects_oversized_message() {
-        let mut enc = RsEncoder::new(CCSDS, 1, 1, 32);
+        let mut enc = Encoder::new(CCSDS, 1, 1, 32);
         let msg = vec![0u8; 224]; // > message_length (223)
         let mut encoded = vec![0u8; 255];
         assert_eq!(enc.encode(&msg, &mut encoded), Err(EncodeError::MessageTooLong));
@@ -251,9 +284,9 @@ mod tests {
 
     #[test]
     fn message_length_is_block_minus_distance() {
-        let enc = RsEncoder::new(CCSDS, 1, 1, 32);
-        assert_eq!(enc.block_length, 255);
-        assert_eq!(enc.min_distance, 32);
-        assert_eq!(enc.message_length, 223);
+        let enc = Encoder::new(CCSDS, 1, 1, 32);
+        assert_eq!(enc.block_length(), 255);
+        assert_eq!(enc.min_distance(), 32);
+        assert_eq!(enc.message_length(), 223);
     }
 }

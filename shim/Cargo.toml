@@ -1,26 +1,30 @@
 [package]
-name = "fec_shim"
+name = "fec-shim"
 version = "0.1.0"
 edition = "2021"
 authors = ["Brian Armstrong <brian.armstrong.ece+github@gmail.com>"]
+description = "C-ABI shim exposing the fec crate under a libfec-compatible interface as a partial drop-in for existing C codebases."
+license = "BSD-3-Clause"
+repository = "https://github.com/brian-armstrong/fec"
+readme = "README.md"
+
+include = [
+    "src/**/*.rs",
+    "fec_shim.h",
+    "README.md",
+    "Cargo.toml",
+]
 
 [features]
 default = []
+simd = ["fec/simd"]
 
 [dependencies]
-fec = { path = ".." }
+fec = { version = "0.2", path = ".." }
 libc = "0.2"
 
 [lib]
+# The output artifact is named `fec` so it drops in as libfec.so / libfec.a.
 name = "fec"
 crate-type = ["staticlib", "dylib"]
-
-[profile.release]
-lto = true
-codegen-units = 1
-strip = "debuginfo"
-
-[profile.profiling]
-inherits = "release"
-debug = true
-strip = false
+doc = false

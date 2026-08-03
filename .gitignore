@@ -1,0 +1,16 @@
+# Rust build artifacts
+/target
+target/
+**/*.rs.bk
+
+# Editor / OS cruft
+*.swo
+*.swp
+.DS_Store
+._*
+
+# Stray build outputs
+a.out
+
+# Shim benchmark
+shim/bench/out*

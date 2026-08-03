@@ -1,3 +1,5 @@
+use std::fmt;
+
 use super::field::{Field, FieldElement, FieldLogarithm, FieldOperation};
 use super::polynomial::{
     polynomial_build_exp_lut, polynomial_eval_log_lut, polynomial_eval_lut,
@@ -5,8 +7,9 @@ use super::polynomial::{
     Polynomial, reed_solomon_build_generator,
 };
 
-/// Error returned by [`RsDecoder::decode`] / [`RsDecoder::decode_with_erasures`].
+/// Error returned by [`Decoder::decode`] / [`Decoder::decode_with_erasures`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DecodeError {
     /// The encoded block was longer than the code's block length.
     BlockTooLong,
@@ -16,11 +19,29 @@ pub enum DecodeError {
     TooManyErrors,
 }
 
+impl fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DecodeError::BlockTooLong => {
+                write!(f, "encoded block is longer than the code's block length")
+            }
+            DecodeError::TooManyErasures => {
+                write!(f, "more erasures were supplied than the code has parity symbols")
+            }
+            DecodeError::TooManyErrors => {
+                write!(f, "block has more corruption than the code can correct")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DecodeError {}
+
 /// Reed-Solomon decoder over GF(2^8).
-pub struct RsDecoder {
-    pub block_length: usize,
-    pub message_length: usize,
-    pub min_distance: usize,
+pub struct Decoder {
+    block_length: usize,
+    message_length: usize,
+    min_distance: usize,
 
     first_consecutive_root: FieldLogarithm,
     generator_root_gap: FieldLogarithm,
@@ -73,17 +94,18 @@ pub struct RsDecoder {
     combined_locator: Vec<FieldElement>,
 }
 
-impl RsDecoder {
+impl Decoder {
     /// Build a decoder for a (255, 255 - `num_roots`) Reed-Solomon code over
-    /// GF(2^8). The parameters must match those used to encode: see
-    /// [`RsEncoder::new`] for their meaning. Building the decoder precomputes
-    /// ~16 KB of lookup tables, so prefer to construct it once and reuse it.
+    /// GF(2^8). The parameters must match those used to encode. See
+    /// [`Encoder::new`](super::Encoder::new) for their meaning. Building the
+    /// decoder precomputes ~16 KB of lookup tables, so prefer to construct it
+    /// once and reuse it.
     pub fn new(
         primitive_polynomial: FieldOperation,
         first_consecutive_root: FieldLogarithm,
         generator_root_gap: FieldLogarithm,
         num_roots: usize,
-    ) -> RsDecoder {
+    ) -> Decoder {
         let field = Field::new(primitive_polynomial);
 
         let block_length = 255usize;
@@ -137,7 +159,7 @@ impl RsDecoder {
             element_exp.push(lut);
         }
 
-        RsDecoder {
+        Decoder {
             block_length,
             message_length,
             min_distance,
@@ -174,15 +196,31 @@ impl RsDecoder {
 
     /// Build a decoder for the standard CCSDS (255,223) Reed-Solomon code
     /// (conventional-basis representation). For the dual-basis representation used
-    /// on the wire, see [`RsDecoder::decode_ccsds_dual`].
-    pub fn new_ccsds() -> RsDecoder {
+    /// on the wire, see [`Decoder::decode_ccsds_dual`].
+    pub fn new_ccsds() -> Decoder {
         use super::ccsds;
-        RsDecoder::new(
+        Decoder::new(
             ccsds::CCSDS_PRIMITIVE_POLYNOMIAL,
             ccsds::CCSDS_FIRST_CONSECUTIVE_ROOT,
             ccsds::CCSDS_GENERATOR_ROOT_GAP,
             ccsds::CCSDS_NUM_ROOTS,
         )
+    }
+
+    /// The block length in bytes, always 255 for this GF(2^8) code.
+    pub fn block_length(&self) -> usize {
+        self.block_length
+    }
+
+    /// The message capacity in bytes, `block_length - num_roots`.
+    pub fn message_length(&self) -> usize {
+        self.message_length
+    }
+
+    /// The number of parity symbols, `num_roots`. The code corrects up to
+    /// `min_distance / 2` byte errors per block.
+    pub fn min_distance(&self) -> usize {
+        self.min_distance
     }
 
     // calculate all syndromes of the received polynomial at the roots of the generator
@@ -461,15 +499,16 @@ impl RsDecoder {
         }
     }
 
-    /// Decode a received block, correcting up to `num_roots / 2` byte errors, and
-    /// write the recovered message to `msg` (which must be long enough to hold the
-    /// decoded payload). Returns the number of symbols corrected (0 if the block
-    /// was already clean), or a [`DecodeError`].
+    /// Decode a received block, correcting up to `num_roots / 2` byte errors,
+    /// and write the recovered message to `msg`. `msg` must be long enough to
+    /// hold the decoded payload. Returns the number of symbols corrected, which
+    /// is 0 if the block was already clean, or a [`DecodeError`].
     ///
-    /// The returned count is "corrections the decoder believes it made": under
-    /// more errors than the code can correct, RS can *miscorrect* -- decode to a
-    /// wrong codeword and return success with a payload that still contains
-    /// errors. This is possible but unlikely, and the count cannot detect it.
+    /// The returned count is the number of corrections the decoder believes it
+    /// made. Under more errors than the code can correct, RS can *miscorrect*.
+    /// It decodes to a wrong codeword and returns success with a payload that
+    /// still contains errors. This is possible but unlikely, and the count
+    /// cannot detect it.
     ///
     /// Derived from correct_reed_solomon_decode.
     pub fn decode(&mut self, encoded: &[u8], msg: &mut [u8]) -> Result<usize, DecodeError> {
@@ -600,7 +639,7 @@ impl RsDecoder {
     /// succeeds as long as `num_erasures + 2 * num_errors < num_roots`.
     ///
     /// Returns the number of symbols corrected (errors + erasures resolved), or a
-    /// [`DecodeError`]. The same miscorrection caveat as [`RsDecoder::decode`]
+    /// [`DecodeError`]. The same miscorrection caveat as [`Decoder::decode`]
     /// applies. Derived from correct_reed_solomon_decode_with_erasures.
     pub fn decode_with_erasures(
         &mut self,
@@ -732,14 +771,14 @@ impl RsDecoder {
     }
 
     /// Decode a CCSDS dual-basis received block. `encoded` holds dual-basis
-    /// symbols (message followed by parity, as on the wire); the recovered
+    /// symbols, message followed by parity, as on the wire. The recovered
     /// dual-basis message is written to `msg`. The block is transformed to the
     /// conventional basis, decoded with this (CCSDS) code, and the recovered
-    /// message transformed back to dual. Returns the number of symbols corrected,
-    /// or a [`DecodeError`].
+    /// message transformed back to dual. Returns the number of symbols
+    /// corrected, or a [`DecodeError`].
     ///
     /// This decoder must have been built with the CCSDS parameters (see
-    /// [`RsDecoder::new_ccsds`]).
+    /// [`Decoder::new_ccsds`]).
     pub fn decode_ccsds_dual(
         &mut self,
         encoded: &[u8],

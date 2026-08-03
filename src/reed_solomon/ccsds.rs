@@ -1,16 +1,22 @@
-// CCSDS (255,223) Reed-Solomon: standard parameters and the Berlekamp
-// dual-basis <-> conventional symbol transform.
+//! Parameters and symbol transforms for the standard CCSDS (255,223)
+//! Reed-Solomon code.
+//!
+//! Spacecraft telemetry represents RS symbols in Berlekamp's dual basis, but a
+//! conventional codec works in the power-of-alpha basis. The two bases are
+//! related by a fixed linear map over GF(2). [`conv_to_dual`] and
+//! [`dual_to_conv`] convert a byte between them, so you can encode and decode
+//! with the conventional codec while the wire stays in the dual basis. The
+//! `CCSDS_*` constants are the code's field and generator parameters, ready to
+//! pass to [`Encoder::new`](super::Encoder::new).
+//!
+//! The transform is derived from CCSDS 131.0-B-1, "TM Synchronization and
+//! Channel Coding", Annex D.
 
 // SOURCE / DERIVATION
 // -------------------
-// The CCSDS (255,223) Reed-Solomon code standardized for spacecraft telemetry
-// represents symbols in Berlekamp's dual basis, while a conventional RS codec
-// works in the power-of-alpha basis. The conversion is a fixed linear map
-// over GF(2) given explicitly in:
-//
-//   CCSDS 131.0-B-1, "TM Synchronization and Channel Coding", Annex D
-//   ("Transformation between Berlekamp and Conventional Representations"),
-//   Table/matrix Tα (conventional -> dual) and its inverse Tα^-1.
+// The conversion is the fixed GF(2) linear map given explicitly in CCSDS
+// 131.0-B-1, Annex D ("Transformation between Berlekamp and Conventional
+// Representations"), matrix Tα (conventional -> dual) and its inverse Tα^-1.
 
 use super::field::{FieldLogarithm, FieldOperation};
 
@@ -24,8 +30,8 @@ pub const CCSDS_GENERATOR_ROOT_GAP: FieldLogarithm = 11;
 pub const CCSDS_NUM_ROOTS: usize = 32;
 
 // CCSDS 131.0-B-1 Annex D, Table D-1: Transformation Matrix Tα (conventional -> dual).
-// Row r (r = 0..7) is the dual-basis representation of alpha^(7-r);
-// each row lists [z0 z1 ... z7].
+// Row r (r = 0..7) is the dual-basis representation of alpha^(7-r).
+// Each row lists [z0 z1 ... z7].
 const T_ALPHA: [[u8; 8]; 8] = [
     [1, 0, 0, 0, 1, 1, 0, 1],
     [1, 1, 1, 0, 1, 1, 1, 1],
@@ -97,11 +103,15 @@ pub const CONV_TO_DUAL: [u8; 256] = build_conv_to_dual();
 /// Lookup table mapping a CCSDS dual-basis byte to its conventional-basis byte.
 pub const DUAL_TO_CONV: [u8; 256] = build_dual_to_conv(&CONV_TO_DUAL);
 
+/// Converts one conventional-basis byte to its CCSDS dual-basis byte. This is
+/// the direction applied to parity on its way onto the wire.
 #[inline]
 pub fn conv_to_dual(byte: u8) -> u8 {
     CONV_TO_DUAL[byte as usize]
 }
 
+/// Converts one CCSDS dual-basis byte back to its conventional-basis byte. This
+/// is the direction applied to symbols received from the wire.
 #[inline]
 pub fn dual_to_conv(byte: u8) -> u8 {
     DUAL_TO_CONV[byte as usize]

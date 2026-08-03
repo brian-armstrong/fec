@@ -1,19 +1,56 @@
+[workspace]
+members = ["shim"]
+
 [package]
 name = "fec"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Brian Armstrong <brian.armstrong.ece+github@gmail.com>"]
 description = "Forward error correction for SDR, space, and satellite: convolutional (Viterbi) and Reed-Solomon codes, including the CCSDS (255,223) standard in both conventional and dual-basis representations."
 license = "BSD-3-Clause"
 keywords = ["fec", "reed-solomon", "viterbi", "ccsds", "sdr"]
 categories = ["encoding", "science"]
+repository = "https://github.com/brian-armstrong/fec"
+readme = "README.md"
+
+include = [
+    "src/**/*.rs",
+    "examples/**/*.rs",
+    "benches/**/*.rs",
+    "README.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "Cargo.toml",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
+simd = []
 
 [dependencies]
 
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "decode_throughput"
+harness = false
+required-features = ["simd"]
+
+[[bin]]
+name = "throughput"
+required-features = ["simd"]
+
 [profile.release]
-debug = true
 lto = true
 codegen-units = 1
+strip = "debuginfo"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false

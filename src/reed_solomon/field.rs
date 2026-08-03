@@ -43,7 +43,7 @@ impl Field {
         exp[0] = element as FieldElement;
         log[0] = 0 as FieldLogarithm; // really, it's undefined. we shouldn't ever access this
         for i in 1..512 as FieldOperation {
-            element = element * 2;
+            element *= 2;
             element = if element > 255 {
                 element ^ primitive_poly
             } else {
@@ -80,7 +80,7 @@ impl Field {
         // an odd number of XORs puts you back at your value
 
         // so, just throw away all the even n
-        if n % 2 != 0 {
+        if !n.is_multiple_of(2) {
             elem
         } else {
             0
@@ -263,7 +263,7 @@ mod tests {
             let a = a as FieldElement;
             let mut acc: FieldElement = 1;
             for p in 0..=8 {
-                assert_eq!(field.pow(a, p as i32), acc);
+                assert_eq!(field.pow(a, p), acc);
                 acc = field.mul(acc, a);
             }
         }

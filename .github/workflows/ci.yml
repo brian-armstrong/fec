@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned nightly. The `simd` feature needs nightly (portable_simd); pinning
+  # keeps CI from breaking when an unrelated nightly change lands. Bump
+  # deliberately.
+  NIGHTLY: nightly-2026-07-12
+
+jobs:
+  # Default features build and test on stable: Reed-Solomon and the scalar
+  # convolutional codec. This is the "works on stable Rust" guarantee.
+  stable:
+    name: stable (default features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --verbose
+      - run: cargo test --release --verbose
+
+  # SIMD decoder on nightly. Uses --release because the BER and noise tests
+  # need optimized code to run in reasonable time.
+  nightly-simd:
+    name: nightly (simd feature)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.NIGHTLY }}
+      - run: cargo build --features simd --verbose
+      - run: cargo test --features simd --release --verbose
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.NIGHTLY }}
+          components: clippy
+      - run: cargo clippy --all-targets --features simd -- -D warnings
+
+  # AddressSanitizer over the convolutional decoder matrix. The SIMD decoder
+  # uses raw pointers; this traps any out-of-bounds access the equality tests
+  # cannot see. Rebuilds std with instrumentation, so it is slower.
+  asan:
+    name: address sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.NIGHTLY }}
+          components: rust-src
+      - name: Run conv tests under ASan
+        env:
+          RUSTFLAGS: "-Zsanitizer=address"
+        run: >
+          cargo test
+          -Zbuild-std
+          --target x86_64-unknown-linux-gnu
+          --features simd
+          --release
+          convolutional::simd
