@@ -15,7 +15,7 @@ software-defined radio and spacecraft links:
   on-the-wire **dual-basis** (Berlekamp) representations.
 
 `fec` started as and draws heavy inspiration from the author's own
-[libcorrect](https://github.com/brian-armstrong/libcorrect), a C library
+[libcorrect](https://github.com/github/libcorrect), a C library
 for forward error correction. This crate also credits Phil Karn's libfec
 C library for offering an original implementation of these codes, although
 this crate does not borrow any source or have any relationship with that
