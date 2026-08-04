@@ -75,23 +75,35 @@ impl Encoder {
         let mut bit_reader = BitReader::new(msg);
         let mut bit_writer = BitWriter::new(dst);
 
+        // a convolutional code convolves the filter coefficients, given by the
+        // polynomials, with some history from the message. the history is stored
+        // as the most recent `order` bits in the shift register: oldest bits on
+        // the left, newest on the right.
         let mut shift_register: u32 = 0;
+        // the shift mask removes bits that extend beyond `order`. for e.g. order 7 it
+        // drops the 8th bit and above.
         let shift_mask: u32 = (1 << self.order) - 1;
 
         for _i in 0..8 * msg.len() {
+            // shift the newest message bit in on the right, then trim to order.
             shift_register <<= 1;
             shift_register |= bit_reader.read(1) as u32;
             shift_register &= shift_mask;
 
+            // direct lookup of the convolutional output. all `rate` output bits
+            // for this register state are packed into one row of the table.
             bit_writer.write(self.poly_table[shift_register as usize] as u8, self.rate as usize);
         }
 
+        // flush the shift register. run the same loop with no new inputs, e.g.
+        // shifting in all 0s to drive the register back to the zero state.
         for _i in 0..self.order + 1 {
             shift_register <<= 1;
             shift_register &= shift_mask;
             bit_writer.write(self.poly_table[shift_register as usize] as u8, self.rate as usize);
         }
 
+        // 0-fill any remaining bits in the final byte.
         bit_writer.flush();
         Ok(encode_len)
     }

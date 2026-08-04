@@ -15,6 +15,9 @@ impl<'a> ConvolutionalError<'a> {
     pub(crate) fn fill_next_distances(&mut self, distances: &mut [u16], rate: u32) {
         match self {
             ConvolutionalError::Hard(encoded) => {
+                // peel off `rate` bits to recover the same `out` the encoder
+                // produced, now with the channel's noise applied. the distance to
+                // each possible output `i` is the Hamming distance to `out`.
                 let outputs = encoded.read(rate as usize);
 
                 for (i, distance) in distances.iter_mut().enumerate() {
@@ -24,6 +27,10 @@ impl<'a> ConvolutionalError<'a> {
             ConvolutionalError::Soft(encoded) => {
                 let outputs = encoded.iter().take(rate as usize);
 
+                // linear soft distance
+                // for each possible hard output `i`, sum the absolute difference
+                // between each expected soft value (a 1 bit expects 255,
+                // a 0 bit expects 0) and the received soft symbol.
                 for (i, distance) in distances.iter_mut().enumerate() {
                     let mut dist: u16 = 0;
                     let mut polys = i;
@@ -102,10 +109,14 @@ impl Decoder {
         }
     }
 
+    /// first phase: load the shift register up from 0 (the register fills from
+    /// 1 bit up to `order` bits) building the error metrics for the first bits.
+    /// no output bits are produced here.
     fn decode_head(&mut self, distance_fill: &mut ConvolutionalError) {
         for i in 0..(self.order - 1) {
             distance_fill.fill_next_distances(&mut self.distances, self.rate);
 
+            // walk only the states reachable so far
             let num_states = 1 << (i + 1);
             for (j, error) in self.error_table.errors[..num_states].iter_mut().enumerate() {
                 let previous_state = j >> 1;
@@ -116,13 +127,25 @@ impl Decoder {
         }
     }
 
+    /// main phase: decode every bit except the first (head) and last (tail).
+    ///
+    /// this walks all `2^(order-1)` predecessor states, considering two paths per
+    /// state (the high-order bit set or clear), and for each successor keeps the
+    /// path with the least aggregated bit errors, recording the winner in the
+    /// history buffer for later traceback.
+    ///
+    /// the inner loop computes 4 successor states per iteration, grouped as two
+    /// pairs. the first pair differ only in the *lowest* bit: they share a *predecessor*,
+    /// because their high `order - 1` bits match. the second pair differs only in
+    /// the *highest* bit: they share a *successor*, because that oldest high bit shifts out.
+    /// this pairing is what lets the pair table serve a concatenated distance for both
+    /// at once.
     fn decode_body(
         &mut self,
         distance_fill: &mut ConvolutionalError,
         num_encoded_bits: usize,
         decoded: &mut BitWriter,
     ) {
-        // decode all bits except first (head) and last (tail)
         let num_decoded_bits: u32 = num_encoded_bits as u32 / self.rate;
         for _ in (self.order - 1)..(num_decoded_bits - self.order + 1) {
             distance_fill.fill_next_distances(&mut self.distances, self.rate);
@@ -145,6 +168,11 @@ impl Decoder {
 
                 for (state, prev_state) in state_iter.zip(prev_state_iter) {
                     for (state_offset, prev_offset) in (0..8).step_by(2).zip(0..4) {
+                        // the two candidate predecessors are the low and high
+                        // shift-register states. each carries its aggregate error
+                        // from the previous time slice and a concatenated distance
+                        // for both of its successors (packed low in bits 0..16,
+                        // high in bits 16..32).
                         let low_key = *pair_keys.add(prev_state + prev_offset);
                         let high_key = *pair_keys.add(prev_state + prev_offset + high_prev_offset);
 
@@ -154,6 +182,7 @@ impl Decoder {
                         let low_prev_error = *previous_errors.add(prev_state + prev_offset);
                         let high_prev_error = *previous_errors.add(prev_state + prev_offset + high_prev_offset);
 
+                        // even successor
                         let low_error0 = (low_concat_distance & 0xffff) as u16 + low_prev_error;
                         let high_error0 = (high_concat_distance & 0xffff) as u16 + high_prev_error;
                         let (error0, successor0) = if low_error0 <= high_error0 {
@@ -164,6 +193,7 @@ impl Decoder {
                         *errors.add(state + state_offset) = error0;
                         *history.add(state + state_offset) = successor0;
 
+                        // odd successor
                         let low_error1 = (low_concat_distance >> 16) as u16 + low_prev_error;
                         let high_error1 = (high_concat_distance >> 16) as u16 + high_prev_error;
                         let (error1, successor1) = if low_error1 <= high_error1 {
@@ -182,14 +212,17 @@ impl Decoder {
         }
     }
 
+    /// tail phase: decode the last bits, flushing the state registers.
+    ///
+    /// The encoder drove the shift register back to 0, so here only 0s shift in
+    /// and the 1-successors can be skipped. `step` doubles each iteration as more
+    /// of the register is known to be zero, so fewer states remain live.
     fn decode_tail(
         &mut self,
         distance_fill: &mut ConvolutionalError,
         num_encoded_bits: usize,
         decoded: &mut BitWriter,
     ) {
-        // decode last bits
-        // we know that the shift register was cleared out to 0 at the end
         let num_decoded_bits: u32 = num_encoded_bits as u32 / self.rate;
         let highbit = self.highbit as usize;
         let high_prev_offset = highbit >> 1;
@@ -236,6 +269,8 @@ impl Decoder {
         self.error_table.reset();
         self.history_table.reset();
 
+        // three phases: warm up the register from zero (no output), decode the
+        // steady-state body, then flush the register back to zero.
         self.decode_head(distance_fill);
         self.decode_body(distance_fill, num_encoded_bits, decoded);
         self.decode_tail(distance_fill, num_encoded_bits, decoded);
@@ -387,6 +422,7 @@ impl ConvolutionalHistoryTable {
             [(self.history_index * self.num_states as usize)..((self.history_index + 1) * self.num_states as usize)]
     }
 
+    /// find the shift-register state with the least accumulated error.
     fn least_error_path(&self, distances: &[u16], search_every: u32) -> u16 {
         let step = search_every as usize;
         let mut best_i = 0u16;
@@ -403,6 +439,8 @@ impl ConvolutionalHistoryTable {
         best_i
     }
 
+    /// subtract the minimum error from every state so the metrics can't overflow
+    /// their 16-bit width as they accumulate across the message.
     fn renormalize(&self, distances: &mut [u16], least_register: u16) {
         let min_distance = distances[least_register as usize];
         for distance in distances.iter_mut() {
@@ -414,8 +452,12 @@ impl ConvolutionalHistoryTable {
         let mut index = self.history_index;
         let mut best_path = init_best_path;
 
-        // loop 1 - rewind history table but don't collect any bits
-        // these bits are still converging
+        // loop 1 - rewind the history table without collecting any bits
+        // these most-recent bits are still converging
+        //
+        // walking backwards through the recorded winners, each step tells us the
+        // high-order bit of the predecessor state. shift in that bit from the top and
+        // shift right to recover the state one time slice earlier.
         for _ in 0..min_traceback_length {
             index = if index == 0 { self.history_cap - 1 } else { index - 1 };
 
@@ -424,7 +466,7 @@ impl ConvolutionalHistoryTable {
             best_path = (best_path | reg_bit) >> 1;
         }
 
-        // loop 2 - rewind history table and collect bits
+        // loop 2 - keep rewinding and collect the decoded bits
         let num_decodes = self.history_len - min_traceback_length as usize;
         for decoded in self.decode_buf.iter_mut().take(num_decodes) {
             index = if index == 0 { self.history_cap - 1 } else { index - 1 };
@@ -448,15 +490,21 @@ impl ConvolutionalHistoryTable {
         self.renormalize_counter += 1;
         self.history_len += 1;
 
+        // four ways this resolves: (a) neither renormalize nor traceback,
+        // (b) renormalize only, (c) both, (d) traceback only. in case (c) the
+        // search for the best path is expensive, so we reuse the one found while
+        // renormalizing rather than searching twice.
         if self.renormalize_counter == self.renormalize_interval {
             self.renormalize_counter = 0;
             let best_path = self.least_error_path(distances, step);
             self.renormalize(distances, best_path);
             if self.history_len == self.history_cap {
+                // reuse the best path found for renormalizing
                 let min_traceback_length = self.min_traceback_length;
                 self.traceback(best_path, min_traceback_length, bit_writer);
             }
         } else if self.history_len == self.history_cap {
+            // not renormalizing, so find the best path here
             let best_path = self.least_error_path(distances, step);
             let min_traceback_length = self.min_traceback_length;
             self.traceback(best_path, min_traceback_length, bit_writer);
@@ -496,6 +544,11 @@ impl ConvolutionalPairTable {
         let mut outputs: Vec<u32> = Vec::new();
         let mut outputs_lookup: HashMap<u32, u32> = HashMap::new();
 
+        // for each even-numbered shift-register state, form the concatenated
+        // output of that state and the subsequent state (low bit set). Many
+        // states share the same concatenated output, so intern each distinct one
+        // under a compact key and store that key for the state. the inner loop
+        // then indexes distances by key instead of by full output.
         for (pairs, key) in poly_table.chunks(2).zip(&mut keys) {
             let output: u32 = ((pairs[1] as u32) << rate) | pairs[0] as u32;
             let next_idx = outputs.len() as u32;
@@ -515,6 +568,9 @@ impl ConvolutionalPairTable {
     }
 
     pub fn distances(&mut self, distances: &[u16]) -> &[u32] {
+        // pack the two per-output distances of each interned pair into one u32.
+        // the first output's distance lives in the low 16 bits and the second's
+        // in the high 16 bits. the inner loop reads both successors in one load.
         for (distance, pair) in self.distances.iter_mut().zip(&self.outputs) {
             let first: u32 = pair & self.output_mask;
             let second: u32 = pair >> self.output_width;
