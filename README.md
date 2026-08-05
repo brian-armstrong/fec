@@ -29,6 +29,37 @@ Standard parameters (primitive polynomials, the CCSDS dual-basis transform) are
 derived from the published CCSDS standard ([CCSDS 131.0-B](https://public.ccsds.org/),
 Annex D for the dual basis).
 
+## Performance
+
+With the `simd` feature, `fec` decodes faster than libfec on every code.
+Measured through libfec's own test programs with only the codec library
+swapped, on a Zen4 laptop (Ryzen 7840HS). Higher is better.
+
+| code                         | fec (64-bit) | libfec (best) | libfec (64-bit) |
+|------------------------------|-------------:|--------------:|----------------:|
+| conv, rate 1/2, k=7          |   158 Mbps   |   148 Mbps[^a]|      17 Mbps    |
+| conv, rate 1/2, k=9          |    66 Mbps   |    65 Mbps[^a]|       3 Mbps    |
+| conv, rate 1/3, k=9          |    61 Mbps   |    23 Mbps[^a]|       2 Mbps    |
+| conv, rate 1/6, k=15         |  1187 Kbps   |   415 Kbps[^a]|      40 Kbps    |
+| RS (255,223), general        |   568 Mbps   |   157 Mbps    |     157 Mbps    |
+| RS (255,223), CCSDS          |   568 Mbps   |   223 Mbps    |     223 Mbps    |
+| RS (255,223), general, 2 err |   445 Mbps   |   150 Mbps    |     150 Mbps    |
+| RS (255,223), CCSDS, 2 err   |   443 Mbps   |   207 Mbps    |     207 Mbps    |
+
+Convolutional throughput is decoded payload bits per second. The Reed-Solomon
+rows decode a (255,223) block, first with no errors (syndromes only) and then
+with two symbol errors. Reed-Solomon uses no SIMD in either library, so libfec's
+best there is simply its 64-bit build.
+
+[^a]: libfec's SIMD kernels are gated behind `#ifdef __i386__`, so its fastest
+    convolutional build is the 32-bit one, running Karn's SSE2 assembly. A
+    64-bit libfec build has no SIMD path at all. `fec`'s SIMD works on both.
+
+See [shim/BENCH.md](https://github.com/brian-armstrong/fec/blob/main/shim/BENCH.md)
+for the full tables, the bit error rate comparison, the 32-bit numbers, and how
+to reproduce them.
+
+
 ## Quick start
 
 ### Convolutional (Viterbi)
@@ -83,9 +114,7 @@ The codes are **bit-compatible with [libfec](https://github.com/ka9q/libfec)**
 (Phil Karn, KA9Q), so `fec` can decode data Karn's library produced and
 vice versa. A companion shim crate, [`fec-shim`](https://crates.io/crates/fec-shim),
 exposes `fec` under libfec's C ABI (`init_rs_char`, `create_viterbi27`,
-`encode_rs_ccsds`, etc) as a drop-in for existing C codebases. With the `simd`
-feature enabled (requires nightly), this crate is **more performant** than either
-libcorrect or libfec on x86.
+`encode_rs_ccsds`, etc) as a drop-in for existing C codebases.
 
 ## Roadmap
 
