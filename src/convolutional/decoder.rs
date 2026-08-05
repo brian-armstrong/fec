@@ -7,7 +7,15 @@ use std::mem;
 
 pub(crate) enum ConvolutionalError<'a> {
     Hard(BitReader<'a>),
+    HardErasure {
+        encoded: BitReader<'a>,
+        erasure: BitReader<'a>,
+    },
     Soft(&'a [u8]),
+    SoftErasure {
+        encoded: &'a [u8],
+        erasure: BitReader<'a>,
+    },
 }
 
 impl<'a> ConvolutionalError<'a> {
@@ -24,6 +32,15 @@ impl<'a> ConvolutionalError<'a> {
                     *distance = util::metric_distance(i as u32, outputs.into()) as u16;
                 }
             }
+            ConvolutionalError::HardErasure { encoded, erasure } => {
+                let outputs = encoded.read(rate as usize);
+                let mask = !erasure.read(rate as usize);
+
+                for (i, distance) in distances.iter_mut().enumerate() {
+                    let diff = (i as u8 ^ outputs) & mask;
+                    *distance = diff.count_ones() as u16;
+                }
+            }
             ConvolutionalError::Soft(encoded) => {
                 let outputs = encoded.iter().take(rate as usize);
 
@@ -37,6 +54,26 @@ impl<'a> ConvolutionalError<'a> {
                     for &output in outputs.clone() {
                         let expected = if polys & 1 != 0 { 255i16 } else { 0i16 };
                         polys >>= 1;
+                        dist += (output as i16 - expected).unsigned_abs();
+                    }
+                    *distance = dist;
+                }
+                *encoded = &encoded[(rate as usize)..];
+            }
+            ConvolutionalError::SoftErasure { encoded, erasure } => {
+                let outputs = encoded.iter().take(rate as usize);
+                let erased = erasure.read(rate as usize);
+
+                for (i, distance) in distances.iter_mut().enumerate() {
+                    let mut dist: u16 = 0;
+                    let mut polys = i;
+                    for (j, &output) in outputs.clone().enumerate() {
+                        let is_one = polys & 1 != 0;
+                        polys >>= 1;
+                        if (erased >> j) & 1 != 0 {
+                            continue;
+                        }
+                        let expected = if is_one { 255i16 } else { 0i16 };
                         dist += (output as i16 - expected).unsigned_abs();
                     }
                     *distance = dist;
@@ -321,6 +358,50 @@ impl Decoder {
         Ok(self._decode(&mut distance_fill, num_encoded_bits, &mut bit_writer))
     }
 
+    /// Decodes a hard-decision block whose channel bits carry known erasures.
+    ///
+    /// This is [`decode_hard`](Self::decode_hard) with an extra `erasure` slice.
+    /// `erasure` is bit-packed, one bit per encoded bit in the same order as
+    /// `encoded`, MSB-first within each byte. A set bit marks a bit the
+    /// demodulator flagged as erased, meaning lost, punctured, or below its
+    /// confidence floor. Erased bits are excluded from every branch metric, so
+    /// they neither help nor hurt any path. An erasure is cheaper for the code to
+    /// absorb than an error, because its position is known.
+    ///
+    /// `erasure` must hold at least `num_encoded_bits` bits. That is at least
+    /// `num_encoded_bits.div_ceil(8)` bytes. The remaining arguments and error
+    /// conditions match [`decode_hard`](Self::decode_hard).
+    pub fn decode_hard_with_erasure(
+        &mut self,
+        encoded: &[u8],
+        num_encoded_bits: usize,
+        erasure: &[u8],
+        msg: &mut [u8],
+    ) -> Result<usize, DecodeError> {
+        error::validate_encoded_len(num_encoded_bits, self.rate, self.order)?;
+
+        if num_encoded_bits.div_ceil(8) > encoded.len() || num_encoded_bits.div_ceil(8) > erasure.len() {
+            return Err(DecodeError::InvalidLength {
+                num_encoded_bits,
+                rate: self.rate,
+            });
+        }
+        let needed = error::payload_len_bytes(num_encoded_bits, self.rate, self.order);
+        if msg.len() < needed {
+            return Err(DecodeError::OutputTooSmall {
+                needed,
+                actual: msg.len(),
+            });
+        }
+
+        let mut bit_writer = BitWriter::new(msg);
+        let mut distance_fill = ConvolutionalError::HardErasure {
+            encoded: BitReader::new(encoded),
+            erasure: BitReader::new(erasure),
+        };
+        Ok(self._decode(&mut distance_fill, num_encoded_bits, &mut bit_writer))
+    }
+
     /// Decodes a soft-decision block into `msg`.
     ///
     /// Each element of `encoded` is one 8-bit soft symbol, one symbol per
@@ -352,6 +433,52 @@ impl Decoder {
 
         let mut bit_writer = BitWriter::new(msg);
         let mut distance_fill = ConvolutionalError::Soft(encoded);
+        Ok(self._decode(&mut distance_fill, num_encoded_bits, &mut bit_writer))
+    }
+
+    /// Decodes a soft-decision block whose symbols carry known erasures.
+    ///
+    /// This is [`decode_soft`](Self::decode_soft) with an extra `erasure` slice.
+    /// `erasure` is bit-packed, one bit per encoded bit, which is one bit per soft
+    /// symbol in `encoded`. It uses the same order as `encoded`, MSB-first within
+    /// each byte. A set bit marks an erased symbol. Erased symbols are excluded
+    /// from every branch metric, so they vote for no path. This is a stronger
+    /// statement than a neutral `128` soft value. An erasure is a known-absent
+    /// symbol, so it is dropped outright rather than contributing a small distance
+    /// to every path.
+    ///
+    /// `erasure` must hold at least `encoded.len()` bits. That is at least
+    /// `encoded.len().div_ceil(8)` bytes. The remaining arguments and error
+    /// conditions match [`decode_soft`](Self::decode_soft).
+    pub fn decode_soft_with_erasure(
+        &mut self,
+        encoded: &[u8],
+        erasure: &[u8],
+        msg: &mut [u8],
+    ) -> Result<usize, DecodeError> {
+        let num_encoded_bits = encoded.len();
+
+        error::validate_encoded_len(num_encoded_bits, self.rate, self.order)?;
+
+        if num_encoded_bits.div_ceil(8) > erasure.len() {
+            return Err(DecodeError::InvalidLength {
+                num_encoded_bits,
+                rate: self.rate,
+            });
+        }
+        let needed = error::payload_len_bytes(num_encoded_bits, self.rate, self.order);
+        if msg.len() < needed {
+            return Err(DecodeError::OutputTooSmall {
+                needed,
+                actual: msg.len(),
+            });
+        }
+
+        let mut bit_writer = BitWriter::new(msg);
+        let mut distance_fill = ConvolutionalError::SoftErasure {
+            encoded,
+            erasure: BitReader::new(erasure),
+        };
         Ok(self._decode(&mut distance_fill, num_encoded_bits, &mut bit_writer))
     }
 }
@@ -584,7 +711,7 @@ impl ConvolutionalPairTable {
 #[cfg(test)]
 mod tests {
     use super::Decoder;
-    use crate::convolutional::sim::{bpsk_params, flip_with_interval, Testbench};
+    use crate::convolutional::sim::{bit_distance, bpsk_params, flip_with_interval, Testbench};
     use crate::convolutional::{DecodeError, Encoder};
     use crate::util::Rng;
 
@@ -619,6 +746,25 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn erasure_rejects_short_mask() {
+        let mut d = Decoder::new(2, 7, &[0o155, 0o117]);
+        let mut out = vec![0u8; 64];
+        let encoded = vec![0u8; 200];
+        let num_bits: usize = 200 * 8;
+        // erasure mask one byte short of covering num_encoded_bits
+        let short_mask = vec![0u8; num_bits.div_ceil(8) - 1];
+        assert!(matches!(
+            d.decode_hard_with_erasure(&encoded, num_bits, &short_mask, &mut out),
+            Err(DecodeError::InvalidLength { .. })
+        ));
+        let short_mask = vec![0u8; encoded.len().div_ceil(8) - 1];
+        assert!(matches!(
+            d.decode_soft_with_erasure(&encoded, &short_mask, &mut out),
+            Err(DecodeError::InvalidLength { .. })
+        ));
+    }
+
     fn decode_matches_msg<const RATE: u32, const ORDER: u32>(
         polys: &[u16],
         msg_len: usize,
@@ -641,10 +787,14 @@ mod tests {
             flip_with_interval(&mut encoded, enc_bits, RATE, ORDER, &mut rng);
         }
 
+        let empty_mask = vec![0u8; enc_bits.div_ceil(8)];
         let mut out = vec![0u8; msg_len];
+        let mut out_erasure = vec![0u8; msg_len];
         let mut dec = Decoder::new(RATE, ORDER, polys);
         if hard {
             dec.decode_hard(&encoded, enc_bits, &mut out).unwrap();
+            dec.decode_hard_with_erasure(&encoded, enc_bits, &empty_mask, &mut out_erasure)
+                .unwrap();
         } else {
             let mut soft = vec![0u8; enc_bits];
             for (i, s) in soft.iter_mut().enumerate() {
@@ -655,6 +805,8 @@ mod tests {
                 };
             }
             dec.decode_soft(&soft, &mut out).unwrap();
+            dec.decode_soft_with_erasure(&soft, &empty_mask, &mut out_erasure)
+                .unwrap();
         }
 
         let mode = if hard { "hard" } else { "soft" };
@@ -663,12 +815,29 @@ mod tests {
             "scalar decode wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
              clean={clean} seed={seed}"
         );
+        assert_eq!(
+            &out_erasure, &msg,
+            "scalar erasure decode wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
+             clean={clean} seed={seed}"
+        );
     }
 
     fn test_rate_order<const RATE: u32, const ORDER: u32>(polys: &[u16]) {
         for clean in [false, true] {
             for hard in [false, true] {
                 for (msg_len, seeds) in [(256usize, 16u64), (1500usize, 8u64)] {
+                    for seed in 1..=seeds {
+                        decode_matches_msg::<RATE, ORDER>(polys, msg_len, seed, hard, clean);
+                    }
+                }
+            }
+        }
+    }
+
+    fn test_rate_order_short<const RATE: u32, const ORDER: u32>(polys: &[u16]) {
+        for clean in [false, true] {
+            for hard in [false, true] {
+                for (msg_len, seeds) in [(256usize, 8u64), (1500usize, 2u64)] {
                     for seed in 1..=seeds {
                         decode_matches_msg::<RATE, ORDER>(polys, msg_len, seed, hard, clean);
                     }
@@ -715,6 +884,11 @@ mod tests {
     }
     #[test]
     fn decoder_matches_msg_6_15() {
+        test_rate_order_short::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537]);
+    }
+    #[ignore = "slow: rate 1/6 k=15 threshold"]
+    #[test]
+    fn decoder_matches_msg_6_15_full() {
         test_rate_order::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537]);
     }
     #[test]
@@ -1132,6 +1306,299 @@ mod tests {
             100_000,
             None,
             false,
+        );
+    }
+
+    fn assert_erasure_threshold(
+        rate: u32,
+        order: u32,
+        polys: &[u16],
+        erasure_ratio: f64,
+        bytes: usize,
+        max_ber: Option<f64>,
+        hard: bool,
+    ) {
+        const MIN_ERASURES: usize = 1000;
+
+        let mut msg = vec![0u8; bytes];
+        let mut rng = Rng::new(0x1234_5678_9ABC_DEF0);
+        let mut encoder = Encoder::new(rate, order, polys);
+        let mut decoder = Decoder::new(rate, order, polys);
+        let erasure_pct = erasure_ratio * 100.0;
+
+        for b in &mut msg {
+            *b = rng.next_u8();
+        }
+
+        let encoded_len_bits = encoder.encode_len(bytes);
+        let encoded_len_bytes = encoded_len_bits.div_ceil(8);
+        let mut encoded = vec![0u8; encoded_len_bytes];
+        encoder.encode(&msg, &mut encoded).unwrap();
+
+        let mut erasures = vec![0u8; encoded_len_bytes];
+        let mut num_erasures = 0;
+        for i in 0..encoded_len_bits {
+            if rng.next_f64() < erasure_ratio {
+                let byte_index = i / 8;
+                let bit_index = i % 8;
+                encoded[byte_index] ^= 0x80 >> bit_index;
+                erasures[byte_index] |= 0x80 >> bit_index;
+                num_erasures += 1;
+            }
+        }
+
+        assert!(
+            num_erasures >= MIN_ERASURES,
+            "{rate}/{order}: only {num_erasures} erasures at {erasure_pct}% over {bytes}B. Minimum of \
+             {MIN_ERASURES} erasure events required. Raise erasure_ratio or min_bytes."
+        );
+
+        let error_count = if hard {
+            let mut out = vec![0u8; bytes];
+            decoder
+                .decode_hard_with_erasure(&encoded, encoded_len_bits, &erasures, &mut out)
+                .unwrap();
+            bit_distance(&msg, &out)
+        } else {
+            let mut soft = vec![0u8; encoded_len_bits];
+            for (i, s) in soft.iter_mut().enumerate() {
+                *s = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 {
+                    255
+                } else {
+                    0
+                };
+            }
+            let mut out = vec![0u8; bytes];
+            decoder.decode_soft_with_erasure(&soft, &erasures, &mut out).unwrap();
+            bit_distance(&msg, &out)
+        };
+
+        let coded_bits = bytes * 8;
+        let ber = error_count as f64 / coded_bits as f64;
+
+        // do an absolute ber comparison, either to target or a 4x-uncoded floor
+        match max_ber {
+            Some(target) => {
+                assert!(
+                    ber <= target,
+                    "{rate}/{order}: BER {ber:.2e} exceeds reference {target:.2e} \
+                     at {erasure_pct}% ({error_count} errors over {bytes}B)."
+                );
+            }
+            None => {
+                const MIN_GAIN: f64 = 4.0;
+                let uncoded_ber = num_erasures as f64 / encoded_len_bits as f64;
+                let gain = uncoded_ber / ber;
+                assert!(
+                    gain >= MIN_GAIN,
+                    "{rate}/{order}: coding gain {gain:.1}x < {MIN_GAIN}x at {erasure_pct}% \
+                     (uncoded BER {uncoded_ber:.2e}, coded BER {ber:.2e})."
+                );
+            }
+        }
+    }
+
+    const R2K7_15_ERASURE_REF_BER: f64 = 0f64;
+    const R2K7_25_ERASURE_REF_BER: f64 = 5.0e-5;
+    const R2K7_35_ERASURE_REF_BER: f64 = 5.0e-3;
+    const R2K9_20_ERASURE_REF_BER: f64 = 0f64;
+    const R2K9_30_ERASURE_REF_BER: f64 = 5.0e-5;
+    const R2K9_40_ERASURE_REF_BER: f64 = 5.0e-3;
+    const R3K9_35_ERASURE_REF_BER: f64 = 0f64;
+    const R3K9_45_ERASURE_REF_BER: f64 = 5.0e-5;
+    const R3K9_55_ERASURE_REF_BER: f64 = 5.0e-3;
+
+    #[test]
+    fn erasure_threshold_2_5() {
+        assert_erasure_threshold(2, 5, &[0o027, 0o023], 0.05, 300_000, None, false);
+        assert_erasure_threshold(2, 5, &[0o027, 0o023], 0.10, 300_000, None, false);
+        assert_erasure_threshold(2, 5, &[0o027, 0o023], 0.15, 300_000, None, false);
+        assert_erasure_threshold(2, 5, &[0o027, 0o023], 0.05, 300_000, None, true);
+        assert_erasure_threshold(2, 5, &[0o027, 0o023], 0.10, 300_000, None, true);
+        assert_erasure_threshold(2, 5, &[0o027, 0o023], 0.15, 300_000, None, true);
+    }
+
+    #[test]
+    fn erasure_threshold_2_7() {
+        assert_erasure_threshold(
+            2,
+            7,
+            &[0o155, 0o117],
+            0.15,
+            300_000,
+            Some(R2K7_15_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            2,
+            7,
+            &[0o155, 0o117],
+            0.25,
+            300_000,
+            Some(R2K7_25_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            2,
+            7,
+            &[0o155, 0o117],
+            0.35,
+            300_000,
+            Some(R2K7_35_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            2,
+            7,
+            &[0o155, 0o117],
+            0.15,
+            300_000,
+            Some(R2K7_15_ERASURE_REF_BER),
+            true,
+        );
+        assert_erasure_threshold(
+            2,
+            7,
+            &[0o155, 0o117],
+            0.25,
+            300_000,
+            Some(R2K7_25_ERASURE_REF_BER),
+            true,
+        );
+        assert_erasure_threshold(
+            2,
+            7,
+            &[0o155, 0o117],
+            0.35,
+            300_000,
+            Some(R2K7_35_ERASURE_REF_BER),
+            true,
+        );
+    }
+
+    #[test]
+    fn erasure_threshold_2_8() {
+        assert_erasure_threshold(2, 8, &[0o367, 0o225], 0.15, 200_000, None, false);
+        assert_erasure_threshold(2, 8, &[0o367, 0o225], 0.25, 200_000, None, false);
+        assert_erasure_threshold(2, 8, &[0o367, 0o225], 0.35, 200_000, None, false);
+        assert_erasure_threshold(2, 8, &[0o367, 0o225], 0.15, 200_000, None, true);
+        assert_erasure_threshold(2, 8, &[0o367, 0o225], 0.25, 200_000, None, true);
+        assert_erasure_threshold(2, 8, &[0o367, 0o225], 0.35, 200_000, None, true);
+    }
+
+    #[test]
+    fn erasure_threshold_2_9() {
+        assert_erasure_threshold(
+            2,
+            9,
+            &[0o657, 0o435],
+            0.20,
+            300_000,
+            Some(R2K9_20_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            2,
+            9,
+            &[0o657, 0o435],
+            0.30,
+            300_000,
+            Some(R2K9_30_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            2,
+            9,
+            &[0o657, 0o435],
+            0.40,
+            300_000,
+            Some(R2K9_40_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            2,
+            9,
+            &[0o657, 0o435],
+            0.20,
+            300_000,
+            Some(R2K9_20_ERASURE_REF_BER),
+            true,
+        );
+        assert_erasure_threshold(
+            2,
+            9,
+            &[0o657, 0o435],
+            0.30,
+            300_000,
+            Some(R2K9_30_ERASURE_REF_BER),
+            true,
+        );
+        assert_erasure_threshold(
+            2,
+            9,
+            &[0o657, 0o435],
+            0.40,
+            300_000,
+            Some(R2K9_40_ERASURE_REF_BER),
+            true,
+        );
+    }
+
+    #[test]
+    fn erasure_threshold_3_9() {
+        assert_erasure_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            0.35,
+            300_000,
+            Some(R3K9_35_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            0.45,
+            300_000,
+            Some(R3K9_45_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            0.55,
+            300_000,
+            Some(R3K9_55_ERASURE_REF_BER),
+            false,
+        );
+        assert_erasure_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            0.35,
+            300_000,
+            Some(R3K9_35_ERASURE_REF_BER),
+            true,
+        );
+        assert_erasure_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            0.45,
+            300_000,
+            Some(R3K9_45_ERASURE_REF_BER),
+            true,
+        );
+        assert_erasure_threshold(
+            3,
+            9,
+            &[0o755, 0o633, 0o447],
+            0.55,
+            300_000,
+            Some(R3K9_55_ERASURE_REF_BER),
+            true,
         );
     }
 }

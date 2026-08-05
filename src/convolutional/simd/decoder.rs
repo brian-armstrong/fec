@@ -252,6 +252,41 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         Ok(self._decode(&mut distance_fill, num_encoded_bits, &mut bit_writer))
     }
 
+    /// Decodes a hard-decision block with known erasures. This behaves identically
+    /// to the scalar
+    /// [`Decoder::decode_hard_with_erasure`](crate::convolutional::Decoder::decode_hard_with_erasure).
+    /// See it for the erasure encoding and return conventions.
+    pub fn decode_hard_with_erasure(
+        &mut self,
+        encoded: &[u8],
+        num_encoded_bits: usize,
+        erasure: &[u8],
+        msg: &mut [u8],
+    ) -> Result<usize, DecodeError> {
+        error::validate_encoded_len(num_encoded_bits, RATE, ORDER)?;
+
+        if num_encoded_bits.div_ceil(8) > encoded.len() || num_encoded_bits.div_ceil(8) > erasure.len() {
+            return Err(DecodeError::InvalidLength {
+                num_encoded_bits,
+                rate: RATE,
+            });
+        }
+        let needed = error::payload_len_bytes(num_encoded_bits, RATE, ORDER);
+        if msg.len() < needed {
+            return Err(DecodeError::OutputTooSmall {
+                needed,
+                actual: msg.len(),
+            });
+        }
+
+        let mut bit_writer = BitWriter::new(msg);
+        let mut distance_fill = ConvolutionalError::HardErasure {
+            encoded: BitReader::new(encoded),
+            erasure: BitReader::new(erasure),
+        };
+        Ok(self._decode(&mut distance_fill, num_encoded_bits, &mut bit_writer))
+    }
+
     /// Decodes a soft-decision block. This behaves identically to the scalar
     /// [`Decoder::decode_soft`](crate::convolutional::Decoder::decode_soft). See
     /// it for the soft-symbol convention and return conventions.
@@ -271,6 +306,42 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
 
         let mut bit_writer = BitWriter::new(msg);
         let mut distance_fill = ConvolutionalError::Soft(encoded);
+        Ok(self._decode(&mut distance_fill, num_encoded_bits, &mut bit_writer))
+    }
+
+    /// Decodes a soft-decision block with known erasures. This behaves identically
+    /// to the scalar
+    /// [`Decoder::decode_soft_with_erasure`](crate::convolutional::Decoder::decode_soft_with_erasure).
+    /// See it for the erasure encoding and return conventions.
+    pub fn decode_soft_with_erasure(
+        &mut self,
+        encoded: &[u8],
+        erasure: &[u8],
+        msg: &mut [u8],
+    ) -> Result<usize, DecodeError> {
+        let num_encoded_bits = encoded.len();
+
+        error::validate_encoded_len(num_encoded_bits, RATE, ORDER)?;
+
+        if num_encoded_bits.div_ceil(8) > erasure.len() {
+            return Err(DecodeError::InvalidLength {
+                num_encoded_bits,
+                rate: RATE,
+            });
+        }
+        let needed = error::payload_len_bytes(num_encoded_bits, RATE, ORDER);
+        if msg.len() < needed {
+            return Err(DecodeError::OutputTooSmall {
+                needed,
+                actual: msg.len(),
+            });
+        }
+
+        let mut bit_writer = BitWriter::new(msg);
+        let mut distance_fill = ConvolutionalError::SoftErasure {
+            encoded,
+            erasure: BitReader::new(erasure),
+        };
         Ok(self._decode(&mut distance_fill, num_encoded_bits, &mut bit_writer))
     }
 
@@ -684,14 +755,25 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         );
 
         let d = match distance_fill {
+            ConvolutionalError::Hard(encoded) => {
+                let outputs = encoded.read(RATE as usize);
+                Self::dist3_hard_from(outputs, 0)
+            }
+            ConvolutionalError::HardErasure { encoded, erasure } => {
+                let outputs = encoded.read(RATE as usize);
+                let erased = erasure.read(RATE as usize);
+                Self::dist3_hard_erasure_from(outputs, erased, 0)
+            }
             ConvolutionalError::Soft(encoded) => {
                 let d = Self::dist3_soft_from(&encoded[..RATE as usize], 0);
                 *encoded = &encoded[RATE as usize..];
                 d
             }
-            ConvolutionalError::Hard(encoded) => {
-                let outputs = encoded.read(RATE as usize);
-                Self::dist3_hard_from(outputs, 0)
+            ConvolutionalError::SoftErasure { encoded, erasure } => {
+                let erased = erasure.read(RATE as usize);
+                let d = Self::dist3_soft_erasure_from(&encoded[..RATE as usize], erased, 0);
+                *encoded = &encoded[RATE as usize..];
+                d
             }
         };
         let lo: u8x16 = unsafe { core::mem::transmute(d) };
@@ -712,6 +794,21 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         // each register will contain all permutations of distances for 3 input samples
         // we will then cross the registers to get the full set of (2^RATE) distances for all `RATE` samples
         let (d0, d1, d2) = match distance_fill {
+            ConvolutionalError::Hard(encoded) => {
+                let bits = encoded.read(r);
+                let d0 = Self::dist3_hard_from(bits, 0);
+                let d1 = Self::dist3_hard_from(bits, 3);
+                let d2 = Self::dist3_hard_from(bits, 6);
+                (d0, d1, d2)
+            }
+            ConvolutionalError::HardErasure { encoded, erasure } => {
+                let bits = encoded.read(r);
+                let erased = erasure.read(r);
+                let d0 = Self::dist3_hard_erasure_from(bits, erased, 0);
+                let d1 = Self::dist3_hard_erasure_from(bits, erased, 3);
+                let d2 = Self::dist3_hard_erasure_from(bits, erased, 6);
+                (d0, d1, d2)
+            }
             ConvolutionalError::Soft(encoded) => {
                 let d0 = Self::dist3_soft_from(encoded, 0);
                 let d1 = Self::dist3_soft_from(encoded, 3);
@@ -719,11 +816,12 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
                 *encoded = &encoded[r..];
                 (d0, d1, d2)
             }
-            ConvolutionalError::Hard(reader) => {
-                let bits = reader.read(r);
-                let d0 = Self::dist3_hard_from(bits, 0);
-                let d1 = Self::dist3_hard_from(bits, 3);
-                let d2 = Self::dist3_hard_from(bits, 6);
+            ConvolutionalError::SoftErasure { encoded, erasure } => {
+                let erased = erasure.read(r);
+                let d0 = Self::dist3_soft_erasure_from(encoded, erased, 0);
+                let d1 = Self::dist3_soft_erasure_from(encoded, erased, 3);
+                let d2 = Self::dist3_soft_erasure_from(encoded, erased, 6);
+                *encoded = &encoded[r..];
                 (d0, d1, d2)
             }
         };
@@ -753,6 +851,44 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
     }
 
     #[inline(always)]
+    fn dist3_hard_from(bits: u8, from: usize) -> u16x8 {
+        let pair = |i: usize| -> (u16, u16) {
+            if from + i < RATE as usize {
+                if (bits >> (from + i)) & 1 != 0 {
+                    (1, 0)
+                } else {
+                    (0, 1)
+                }
+            } else {
+                (0, 0)
+            }
+        };
+        let (d0, d0_inv) = pair(0);
+        let (d1, d1_inv) = pair(1);
+        let (d2, d2_inv) = pair(2);
+        Self::dist3_from(d0, d0_inv, d1, d1_inv, d2, d2_inv)
+    }
+
+    #[inline(always)]
+    fn dist3_hard_erasure_from(bits: u8, erased: u8, from: usize) -> u16x8 {
+        let pair = |i: usize| -> (u16, u16) {
+            if from + i < RATE as usize && (erased >> (from + i)) & 1 == 0 {
+                if (bits >> (from + i)) & 1 != 0 {
+                    (1, 0)
+                } else {
+                    (0, 1)
+                }
+            } else {
+                (0, 0)
+            }
+        };
+        let (d0, d0_inv) = pair(0);
+        let (d1, d1_inv) = pair(1);
+        let (d2, d2_inv) = pair(2);
+        Self::dist3_from(d0, d0_inv, d1, d1_inv, d2, d2_inv)
+    }
+
+    #[inline(always)]
     fn dist3_soft_from(encoded: &[u8], from: usize) -> u16x8 {
         let pair = |i: usize| -> (u16, u16) {
             if from + i < RATE as usize {
@@ -769,14 +905,11 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
     }
 
     #[inline(always)]
-    fn dist3_hard_from(bits: u8, from: usize) -> u16x8 {
+    fn dist3_soft_erasure_from(encoded: &[u8], erased: u8, from: usize) -> u16x8 {
         let pair = |i: usize| -> (u16, u16) {
-            if from + i < RATE as usize {
-                if (bits >> (from + i)) & 1 != 0 {
-                    (1, 0)
-                } else {
-                    (0, 1)
-                }
+            if from + i < RATE as usize && (erased >> (from + i)) & 1 == 0 {
+                let s = encoded[from + i] as u16;
+                (s, 255 - s)
             } else {
                 (0, 0)
             }
@@ -1413,6 +1546,7 @@ mod tests {
         let mut enc = Encoder::new(RATE, ORDER, polys);
         let enc_bits = enc.encode_len(msg_len);
         let mut encoded = vec![0u8; enc_bits.div_ceil(8)];
+        let empty_mask = vec![0u8; enc_bits.div_ceil(8)];
         enc.encode(&msg, &mut encoded).unwrap();
 
         if !clean {
@@ -1420,10 +1554,13 @@ mod tests {
         }
 
         let mut simd_out = vec![0u8; msg_len];
+        let mut erasure_out = vec![0u8; msg_len];
         let mut simd = SimdDecoder::<RATE, ORDER>::new(polys).with_max_arch(arch.caps());
 
         if hard {
             simd.decode_hard(&encoded, enc_bits, &mut simd_out).unwrap();
+            simd.decode_hard_with_erasure(&encoded, enc_bits, &empty_mask, &mut erasure_out)
+                .unwrap();
         } else {
             let mut soft = vec![0u8; enc_bits];
             for (i, s) in soft.iter_mut().enumerate() {
@@ -1434,12 +1571,19 @@ mod tests {
                 };
             }
             simd.decode_soft(&soft, &mut simd_out).unwrap();
+            simd.decode_soft_with_erasure(&soft, &empty_mask, &mut erasure_out)
+                .unwrap();
         }
 
         let mode = if hard { "hard" } else { "soft" };
         assert_eq!(
             &simd_out, &msg,
             "SIMD decode wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
+             clean={clean} seed={seed} arch={arch:?}"
+        );
+        assert_eq!(
+            &erasure_out, &msg,
+            "SIMD decode with erasure wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
              clean={clean} seed={seed} arch={arch:?}"
         );
     }
@@ -1529,6 +1673,7 @@ mod tests {
         let mut enc = Encoder::new(RATE, ORDER, polys);
         let enc_bits = enc.encode_len(msg_len);
         let mut encoded = vec![0u8; enc_bits.div_ceil(8)];
+        let empty_mask = vec![0u8; enc_bits.div_ceil(8)];
         enc.encode(&msg, &mut encoded).unwrap();
 
         if !clean {
@@ -1536,10 +1681,13 @@ mod tests {
         }
 
         let mut simd_out = vec![0u8; msg_len];
+        let mut erasure_out = vec![0u8; msg_len];
         let mut simd = SimdDecoder::<RATE, ORDER>::new(polys).with_path(Some(path));
 
         if hard {
             simd.decode_hard(&encoded, enc_bits, &mut simd_out).unwrap();
+            simd.decode_hard_with_erasure(&encoded, enc_bits, &empty_mask, &mut erasure_out)
+                .unwrap();
         } else {
             let mut soft = vec![0u8; enc_bits];
             for (i, s) in soft.iter_mut().enumerate() {
@@ -1550,12 +1698,19 @@ mod tests {
                 };
             }
             simd.decode_soft(&soft, &mut simd_out).unwrap();
+            simd.decode_soft_with_erasure(&soft, &empty_mask, &mut erasure_out)
+                .unwrap();
         }
 
         let mode = if hard { "hard" } else { "soft" };
         assert_eq!(
             &simd_out, &msg,
             "SIMD decode wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
+             clean={clean} seed={seed} path={path:?}"
+        );
+        assert_eq!(
+            &erasure_out, &msg,
+            "SIMD decode with erasure wrong: rate={RATE} order={ORDER} len={msg_len} mode={mode} \
              clean={clean} seed={seed} path={path:?}"
         );
     }
@@ -2444,5 +2599,262 @@ mod tests {
         assert_simd_matches_scalar_noise::<8, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], Some(ForcedPath::OctLookupAvx2), 2.0, 50_000, false);
         assert_simd_matches_scalar_noise::<8, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], Some(ForcedPath::OctLookupSse41), 2.0, 50_000, false);
         assert_simd_matches_scalar_noise::<8, 7>(&[0o155, 0o117, 0o123, 0o161, 0o127, 0o133, 0o145, 0o171], Some(ForcedPath::OctLookup128), 2.0, 50_000, false);
+    }
+
+    fn assert_simd_matches_scalar_erasure<const RATE: u32, const ORDER: u32>(
+        polys: &[u16],
+        path: Option<ForcedPath>,
+        erasure_ratio: f64,
+        bytes: usize,
+        hard: bool,
+    ) {
+        if let Some(p) = path {
+            if !host_supports(p) {
+                eprintln!("SKIP erasure {RATE}/{ORDER} {p:?}: host lacks the required arch");
+                return;
+            }
+        }
+
+        const MIN_ERASURES: usize = 8000;
+        let erasure_pct = erasure_ratio * 100.0;
+
+        let mut msg = vec![0u8; bytes];
+        let mut rng = Rng::new(0x1234_5678_9ABC_DEF0);
+        let mut encoder = Encoder::new(RATE, ORDER, polys);
+        let mut scalar = Decoder::new(RATE, ORDER, polys);
+        let mut simd = SimdDecoder::<RATE, ORDER>::new(polys).with_path(path);
+        let mut scalar_out = vec![0u8; bytes];
+        let mut simd_out = vec![0u8; bytes];
+
+        for b in msg.iter_mut() {
+            *b = rng.next_u8();
+        }
+
+        let encoded_len_bits = encoder.encode_len(bytes);
+        let encoded_len_bytes = encoded_len_bits.div_ceil(8);
+        let mut encoded = vec![0u8; encoded_len_bytes];
+        encoder.encode(&msg, &mut encoded).unwrap();
+
+        let mut erasures = vec![0u8; encoded_len_bytes];
+        let mut num_erasures = 0;
+        for i in 0..encoded_len_bits {
+            if rng.next_f64() < erasure_ratio {
+                let byte_index = i / 8;
+                let bit_index = i % 8;
+                encoded[byte_index] ^= 0x80 >> bit_index;
+                erasures[byte_index] |= 0x80 >> bit_index;
+                num_erasures += 1;
+            }
+        }
+
+        assert!(
+            num_erasures >= MIN_ERASURES,
+            "{RATE}/{ORDER} {path:?}: only {num_erasures} erasures at {erasure_pct:.1}% over {bytes}B. Minimum of \
+             {MIN_ERASURES} error events required. Raise erasure ratio or raise bytes."
+        );
+
+        if hard {
+            scalar
+                .decode_hard_with_erasure(&encoded, encoded_len_bits, &erasures, &mut scalar_out)
+                .unwrap();
+            simd.decode_hard_with_erasure(&encoded, encoded_len_bits, &erasures, &mut simd_out)
+                .unwrap();
+        } else {
+            let mut soft = vec![0u8; encoded_len_bits];
+            for (i, s) in soft.iter_mut().enumerate() {
+                *s = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 {
+                    255
+                } else {
+                    0
+                };
+            }
+            scalar
+                .decode_soft_with_erasure(&soft, &erasures, &mut scalar_out)
+                .unwrap();
+            simd.decode_soft_with_erasure(&soft, &erasures, &mut simd_out).unwrap();
+        }
+
+        let mode = if hard { "hard" } else { "soft" };
+        assert_eq!(
+            &scalar_out, &simd_out,
+            "{RATE}/{ORDER} {path:?} {mode}: SIMD erasure output differs from scalar at {erasure_pct:.1}% over {bytes}B."
+        );
+    }
+
+    #[test]
+    fn simd_matches_scalar_erasure_dispatch_2_7() {
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], None, 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], None, 0.25, 300_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_oct_lookup_2_7() {
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookupAvx512), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookupAvx2), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookupSse41), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookup128), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookupAvx512), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookupAvx2), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookupSse41), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::OctLookup128), 0.25, 300_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_shuffle_2_7() {
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::ShuffleAvx512), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::ShuffleAvx2), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::ShuffleSse41), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::Shuffle128), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::ShuffleAvx512), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::ShuffleAvx2), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::ShuffleSse41), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::Shuffle128), 0.25, 300_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_permute_2_7() {
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::PermuteAvx512), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::PermuteAvx512), 0.25, 300_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_register_2_7() {
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::RegisterAvx512), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::RegisterAvx2), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::RegisterSse41), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::Register128), 0.25, 300_000, false);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::RegisterAvx512), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::RegisterAvx2), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::RegisterSse41), 0.25, 300_000, true);
+        assert_simd_matches_scalar_erasure::<2, 7>(&[0o155, 0o117], Some(ForcedPath::Register128), 0.25, 300_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_dispatch_2_9() {
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], None, 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], None, 0.3, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_oct_lookup_2_9() {
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookupAvx512), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookupAvx2), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookupSse41), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookup128), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookupAvx512), 0.3, 100_000, true);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookupAvx2), 0.3, 100_000, true);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookupSse41), 0.3, 100_000, true);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::OctLookup128), 0.3, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_shuffle_2_9() {
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::ShuffleAvx512), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::ShuffleAvx2), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::ShuffleSse41), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::Shuffle128), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::ShuffleAvx512), 0.3, 100_000, true);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::ShuffleAvx2), 0.3, 100_000, true);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::ShuffleSse41), 0.3, 100_000, true);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::Shuffle128), 0.3, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_permute_2_9() {
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::PermuteAvx512), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::PermuteAvx512), 0.3, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_register_2_9() {
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::RegisterAvx512), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::RegisterAvx2), 0.3, 100_000, false);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::RegisterAvx512), 0.3, 100_000, true);
+        assert_simd_matches_scalar_erasure::<2, 9>(&[0o657, 0o435], Some(ForcedPath::RegisterAvx2), 0.3, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_dispatch_3_9() {
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], None, 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], None, 0.5, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_oct_lookup_3_9() {
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookupAvx512), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookupAvx2), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookupSse41), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookup128), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookupAvx512), 0.5, 100_000, true);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookupAvx2), 0.5, 100_000, true);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookupSse41), 0.5, 100_000, true);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::OctLookup128), 0.5, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_shuffle_3_9() {
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::ShuffleAvx512), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::ShuffleAvx2), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::ShuffleSse41), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::Shuffle128), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::ShuffleAvx512), 0.5, 100_000, true);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::ShuffleAvx2), 0.5, 100_000, true);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::ShuffleSse41), 0.5, 100_000, true);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::Shuffle128), 0.5, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_permute_3_9() {
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::PermuteAvx512), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::PermuteAvx512), 0.5, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_register_3_9() {
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::RegisterAvx512), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::RegisterAvx2), 0.5, 100_000, false);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::RegisterAvx512), 0.5, 100_000, true);
+        assert_simd_matches_scalar_erasure::<3, 9>(&[0o755, 0o633, 0o447], Some(ForcedPath::RegisterAvx2), 0.5, 100_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_dispatch_6_15() {
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], None, 0.65, 5_000, false);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], None, 0.65, 5_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_oct_lookup_6_15() {
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookupAvx512), 0.65, 5_000, false);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookupAvx2), 0.65, 5_000, false);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookupSse41), 0.65, 5_000, false);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookup128), 0.65, 5_000, false);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookupAvx512), 0.65, 5_000, true);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookupAvx2), 0.65, 5_000, true);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookupSse41), 0.65, 5_000, true);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::OctLookup128), 0.65, 5_000, true);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn simd_matches_scalar_erasure_permute_6_15() {
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::PermuteAvx512), 0.65, 5_000, false);
+        assert_simd_matches_scalar_erasure::<6, 15>(&[0o42631, 0o47245, 0o56507, 0o73363, 0o77267, 0o64537], Some(ForcedPath::PermuteAvx512), 0.65, 5_000, true);
     }
 }
