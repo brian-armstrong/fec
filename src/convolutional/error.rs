@@ -82,6 +82,55 @@ impl fmt::Display for EncodeError {
 
 impl std::error::Error for EncodeError {}
 
+/// Error returned by [`Puncturer`](super::Puncturer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PunctureError {
+    /// The pattern is empty, so it describes no period at all.
+    EmptyPattern,
+    /// The rows of a puncturing matrix are not all the same length.
+    RaggedMatrix,
+    /// Every position in the pattern is punctured, which would delete the whole
+    /// stream and leave nothing to decode.
+    NoKeptBits,
+    /// The input buffer is shorter than the described block.
+    InputTooSmall {
+        /// Length the call needs, in the units of the input buffer.
+        needed: usize,
+        /// Length of the buffer that was supplied.
+        actual: usize,
+    },
+    /// An output buffer is too small to hold the result.
+    OutputTooSmall {
+        /// Length the call needs, in the units of the output buffer.
+        needed: usize,
+        /// Length of the buffer that was supplied.
+        actual: usize,
+    },
+}
+
+impl fmt::Display for PunctureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PunctureError::EmptyPattern => write!(f, "puncturing pattern is empty"),
+            PunctureError::RaggedMatrix => {
+                write!(f, "puncturing matrix rows are not all the same length")
+            }
+            PunctureError::NoKeptBits => {
+                write!(f, "puncturing pattern deletes every bit, leaving nothing to decode")
+            }
+            PunctureError::InputTooSmall { needed, actual } => {
+                write!(f, "input buffer holds {actual} but the call needs {needed}")
+            }
+            PunctureError::OutputTooSmall { needed, actual } => {
+                write!(f, "output buffer holds {actual} but the call needs {needed}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PunctureError {}
+
 /// Validates a decode's encoded length against the code parameters and returns
 /// the decoded bit count. This is shared by the scalar and SIMD decoders so
 /// their preconditions cannot drift apart.
@@ -89,7 +138,7 @@ impl std::error::Error for EncodeError {}
 /// The length must be a whole number of code symbols, and it must be long
 /// enough to run the head and tail phases. Both failures return
 /// [`InvalidLength`](DecodeError::InvalidLength).
-pub(crate) fn validate_encoded_len(num_encoded_bits: usize, rate: u32, order: u32) -> Result<u32, DecodeError> {
+pub(crate) fn validate_encoded_len(rate: u32, order: u32, num_encoded_bits: usize) -> Result<u32, DecodeError> {
     let invalid = DecodeError::InvalidLength { num_encoded_bits, rate };
 
     if !num_encoded_bits.is_multiple_of(rate as usize) {
@@ -103,12 +152,4 @@ pub(crate) fn validate_encoded_len(num_encoded_bits: usize, rate: u32, order: u3
     }
 
     Ok(num_decoded_bits)
-}
-
-/// Length in bytes of the payload a decode of `num_encoded_bits` will produce.
-/// It is the decoded bit count `num_encoded_bits / rate`, less the `order + 1`
-/// flush tail, as whole bytes.
-pub(crate) fn payload_len_bytes(num_encoded_bits: usize, rate: u32, order: u32) -> usize {
-    let decoded_bits = num_encoded_bits / rate as usize;
-    decoded_bits.saturating_sub(order as usize + 1) / 8
 }

@@ -37,6 +37,7 @@ pub use convolutional::SimdDecoder as ConvSimdDecoder;
 #[doc(inline)]
 pub use convolutional::{
     DecodeError as ConvDecodeError, Decoder as ConvDecoder, EncodeError as ConvEncodeError, Encoder as ConvEncoder,
+    PunctureError as ConvPunctureError, Puncturer as ConvPuncturer,
 };
 #[doc(inline)]
 pub use reed_solomon::{

@@ -5,6 +5,7 @@ use super::oct_lookup::{DistanceShuffle, OctLookup};
 use crate::convolutional::bit::{BitReader, BitWriter};
 use crate::convolutional::decoder::ConvolutionalError;
 use crate::convolutional::error::{self, DecodeError};
+use crate::convolutional::payload_len_bytes;
 use crate::convolutional::util;
 
 #[doc(hidden)]
@@ -213,6 +214,21 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         self
     }
 
+    /// Returns the encoded length, in *bits*, of a message of `len` *bytes* under
+    /// this decoder's code. This behaves identically to the scalar
+    /// [`Decoder::encoded_len_bits`](crate::convolutional::Decoder::encoded_len_bits).
+    pub fn encoded_len_bits(&self, len: usize) -> usize {
+        crate::convolutional::encoded_len_bits(RATE, ORDER, len)
+    }
+
+    /// Returns the payload length, in *bytes*, that decoding `num_encoded_bits`
+    /// bits produces under this decoder's code. This behaves identically to the
+    /// scalar
+    /// [`Decoder::payload_len_bytes`](crate::convolutional::Decoder::payload_len_bytes).
+    pub fn payload_len_bytes(&self, num_encoded_bits: usize) -> usize {
+        crate::convolutional::payload_len_bytes(RATE, ORDER, num_encoded_bits)
+    }
+
     fn reset(&mut self) {
         self.errors.fill(0);
         self.previous_errors.fill(0);
@@ -230,7 +246,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         num_encoded_bits: usize,
         msg: &mut [u8],
     ) -> Result<usize, DecodeError> {
-        error::validate_encoded_len(num_encoded_bits, RATE, ORDER)?;
+        error::validate_encoded_len(RATE, ORDER, num_encoded_bits)?;
 
         if num_encoded_bits.div_ceil(8) > encoded.len() {
             return Err(DecodeError::InvalidLength {
@@ -238,7 +254,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
                 rate: RATE,
             });
         }
-        let needed = error::payload_len_bytes(num_encoded_bits, RATE, ORDER);
+        let needed = payload_len_bytes(RATE, ORDER, num_encoded_bits);
         if msg.len() < needed {
             return Err(DecodeError::OutputTooSmall {
                 needed,
@@ -263,7 +279,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         erasure: &[u8],
         msg: &mut [u8],
     ) -> Result<usize, DecodeError> {
-        error::validate_encoded_len(num_encoded_bits, RATE, ORDER)?;
+        error::validate_encoded_len(RATE, ORDER, num_encoded_bits)?;
 
         if num_encoded_bits.div_ceil(8) > encoded.len() || num_encoded_bits.div_ceil(8) > erasure.len() {
             return Err(DecodeError::InvalidLength {
@@ -271,7 +287,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
                 rate: RATE,
             });
         }
-        let needed = error::payload_len_bytes(num_encoded_bits, RATE, ORDER);
+        let needed = payload_len_bytes(RATE, ORDER, num_encoded_bits);
         if msg.len() < needed {
             return Err(DecodeError::OutputTooSmall {
                 needed,
@@ -294,9 +310,9 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
         // encoded is just one byte per bit (soft samples)
         let num_encoded_bits = encoded.len();
 
-        error::validate_encoded_len(num_encoded_bits, RATE, ORDER)?;
+        error::validate_encoded_len(RATE, ORDER, num_encoded_bits)?;
 
-        let needed = error::payload_len_bytes(num_encoded_bits, RATE, ORDER);
+        let needed = payload_len_bytes(RATE, ORDER, num_encoded_bits);
         if msg.len() < needed {
             return Err(DecodeError::OutputTooSmall {
                 needed,
@@ -321,7 +337,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
     ) -> Result<usize, DecodeError> {
         let num_encoded_bits = encoded.len();
 
-        error::validate_encoded_len(num_encoded_bits, RATE, ORDER)?;
+        error::validate_encoded_len(RATE, ORDER, num_encoded_bits)?;
 
         if num_encoded_bits.div_ceil(8) > erasure.len() {
             return Err(DecodeError::InvalidLength {
@@ -329,7 +345,7 @@ impl<const RATE: u32, const ORDER: u32> SimdDecoder<RATE, ORDER> {
                 rate: RATE,
             });
         }
-        let needed = error::payload_len_bytes(num_encoded_bits, RATE, ORDER);
+        let needed = payload_len_bytes(RATE, ORDER, num_encoded_bits);
         if msg.len() < needed {
             return Err(DecodeError::OutputTooSmall {
                 needed,

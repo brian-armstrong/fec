@@ -1,5 +1,6 @@
 use super::bit::{BitReader, BitWriter};
 use super::error::{self, DecodeError};
+use super::payload_len_bytes;
 use super::util;
 
 use std::collections::HashMap;
@@ -297,6 +298,37 @@ impl Decoder {
         }
     }
 
+    /// Returns the encoded length, in *bits*, of a message of `len` *bytes* under
+    /// this decoder's code.
+    ///
+    /// A receiver usually knows the payload length, not the encoded length. This
+    /// converts one to the other, so the `num_encoded_bits` that
+    /// [`decode_hard`](Self::decode_hard) takes can be derived without building
+    /// an [`Encoder`](super::Encoder). It matches
+    /// [`Encoder::encode_len`](super::Encoder::encode_len) for the same code.
+    ///
+    /// ```
+    /// use fec::ConvDecoder;
+    ///
+    /// let dec = ConvDecoder::new(2, 7, &[0o161, 0o127]);
+    /// // a 100-byte payload arrives as this many encoded bits
+    /// let num_encoded_bits = dec.encoded_len_bits(100);
+    /// assert_eq!(dec.payload_len_bytes(num_encoded_bits), 100);
+    /// ```
+    pub fn encoded_len_bits(&self, len: usize) -> usize {
+        super::encoded_len_bits(self.rate, self.order, len)
+    }
+
+    /// Returns the payload length, in *bytes*, that decoding `num_encoded_bits`
+    /// bits produces under this decoder's code.
+    ///
+    /// This is the inverse of [`encoded_len_bits`](Self::encoded_len_bits), and
+    /// it is the size [`decode_hard`](Self::decode_hard) and the other decode
+    /// calls need their `msg` buffer to be.
+    pub fn payload_len_bytes(&self, num_encoded_bits: usize) -> usize {
+        super::payload_len_bytes(self.rate, self.order, num_encoded_bits)
+    }
+
     fn _decode(
         &mut self,
         distance_fill: &mut ConvolutionalError,
@@ -324,6 +356,11 @@ impl Decoder {
     /// 8, but it must be a multiple of `rate`. `msg` must be large enough to
     /// hold the decoded payload.
     ///
+    /// `num_encoded_bits` can be derived from the payload length with
+    /// [`encoded_len_bits`](Self::encoded_len_bits) (if the payload length is known),
+    /// or alternatively, the length of `msg` can be derived from the encoded length with
+    /// [`payload_len_bytes`](Self::payload_len_bytes) (if the encoded length is known).
+    ///
     /// On success this returns the number of bytes written to `msg`. It returns
     /// [`InvalidLength`](DecodeError::InvalidLength) if the encoded length is not
     /// a multiple of `rate`, if the block is too short to decode, or if
@@ -336,7 +373,7 @@ impl Decoder {
         num_encoded_bits: usize,
         msg: &mut [u8],
     ) -> Result<usize, DecodeError> {
-        error::validate_encoded_len(num_encoded_bits, self.rate, self.order)?;
+        error::validate_encoded_len(self.rate, self.order, num_encoded_bits)?;
 
         if num_encoded_bits.div_ceil(8) > encoded.len() {
             return Err(DecodeError::InvalidLength {
@@ -344,7 +381,7 @@ impl Decoder {
                 rate: self.rate,
             });
         }
-        let needed = error::payload_len_bytes(num_encoded_bits, self.rate, self.order);
+        let needed = payload_len_bytes(self.rate, self.order, num_encoded_bits);
         if msg.len() < needed {
             return Err(DecodeError::OutputTooSmall {
                 needed,
@@ -378,7 +415,7 @@ impl Decoder {
         erasure: &[u8],
         msg: &mut [u8],
     ) -> Result<usize, DecodeError> {
-        error::validate_encoded_len(num_encoded_bits, self.rate, self.order)?;
+        error::validate_encoded_len(self.rate, self.order, num_encoded_bits)?;
 
         if num_encoded_bits.div_ceil(8) > encoded.len() || num_encoded_bits.div_ceil(8) > erasure.len() {
             return Err(DecodeError::InvalidLength {
@@ -386,7 +423,7 @@ impl Decoder {
                 rate: self.rate,
             });
         }
-        let needed = error::payload_len_bytes(num_encoded_bits, self.rate, self.order);
+        let needed = payload_len_bytes(self.rate, self.order, num_encoded_bits);
         if msg.len() < needed {
             return Err(DecodeError::OutputTooSmall {
                 needed,
@@ -412,6 +449,9 @@ impl Decoder {
     ///
     /// The encoded length in bits is `encoded.len()`, which must be a multiple
     /// of `rate`. `msg` must be large enough to hold the decoded payload.
+    /// [`payload_len_bytes`](Self::payload_len_bytes) gives that size, and
+    /// [`encoded_len_bits`](Self::encoded_len_bits) goes the other way if the
+    /// receiver knows only the payload length.
     ///
     /// On success this returns the number of bytes written to `msg`. It returns
     /// [`InvalidLength`](DecodeError::InvalidLength) if `encoded.len()` is not a
@@ -421,9 +461,9 @@ impl Decoder {
     pub fn decode_soft(&mut self, encoded: &[u8], msg: &mut [u8]) -> Result<usize, DecodeError> {
         let num_encoded_bits = encoded.len();
 
-        error::validate_encoded_len(num_encoded_bits, self.rate, self.order)?;
+        error::validate_encoded_len(self.rate, self.order, num_encoded_bits)?;
 
-        let needed = error::payload_len_bytes(num_encoded_bits, self.rate, self.order);
+        let needed = payload_len_bytes(self.rate, self.order, num_encoded_bits);
         if msg.len() < needed {
             return Err(DecodeError::OutputTooSmall {
                 needed,
@@ -458,7 +498,7 @@ impl Decoder {
     ) -> Result<usize, DecodeError> {
         let num_encoded_bits = encoded.len();
 
-        error::validate_encoded_len(num_encoded_bits, self.rate, self.order)?;
+        error::validate_encoded_len(self.rate, self.order, num_encoded_bits)?;
 
         if num_encoded_bits.div_ceil(8) > erasure.len() {
             return Err(DecodeError::InvalidLength {
@@ -466,7 +506,7 @@ impl Decoder {
                 rate: self.rate,
             });
         }
-        let needed = error::payload_len_bytes(num_encoded_bits, self.rate, self.order);
+        let needed = payload_len_bytes(self.rate, self.order, num_encoded_bits);
         if msg.len() < needed {
             return Err(DecodeError::OutputTooSmall {
                 needed,

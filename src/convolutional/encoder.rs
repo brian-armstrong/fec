@@ -1,3 +1,5 @@
+use crate::convolutional::encoded_len_bits;
+
 use super::bit::{BitReader, BitWriter};
 use super::error::EncodeError;
 use super::util;
@@ -49,8 +51,7 @@ impl Encoder {
     /// `rate * len * 8`. To size a byte buffer for [`encode`](Self::encode),
     /// round up with `encode_len(len).div_ceil(8)`.
     pub fn encode_len(&self, len: usize) -> usize {
-        let bits = len * 8;
-        self.rate as usize * (bits + self.order as usize + 1)
+        encoded_len_bits(self.rate, self.order, len)
     }
 
     /// Encodes `msg` into `dst`, returning the number of *bits* written.

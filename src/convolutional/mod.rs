@@ -23,6 +23,7 @@ pub(crate) mod bit;
 mod decoder;
 mod encoder;
 mod error;
+mod puncture;
 pub mod sim;
 #[cfg(feature = "simd")]
 #[cfg_attr(docsrs, doc(cfg(feature = "simd")))]
@@ -34,7 +35,9 @@ pub use self::decoder::Decoder;
 #[doc(inline)]
 pub use self::encoder::Encoder;
 #[doc(inline)]
-pub use self::error::{DecodeError, EncodeError};
+pub use self::error::{DecodeError, EncodeError, PunctureError};
+#[doc(inline)]
+pub use self::puncture::Puncturer;
 
 #[cfg(feature = "simd")]
 #[cfg_attr(docsrs, doc(cfg(feature = "simd")))]
@@ -46,3 +49,48 @@ pub use self::simd::ForcedPath;
 
 #[cfg(feature = "simd")]
 pub use self::simd::DecoderArch;
+
+/// Returns the encoded length, in *bits*, of a message of `len` *bytes* under a
+/// code with this `rate` and `order`.
+///
+/// The count includes the `order + 1` flush bits the encoder appends.
+pub fn encoded_len_bits(rate: u32, order: u32, len: usize) -> usize {
+    rate as usize * (len * 8 + order as usize + 1)
+}
+
+/// Returns the payload length, in *bytes*, that decoding `num_encoded_bits` bits
+/// produces under a code with this `rate` and `order`.
+///
+/// This is the inverse of [`encoded_len_bits`].
+pub fn payload_len_bytes(rate: u32, order: u32, num_encoded_bits: usize) -> usize {
+    let decoded_bits = num_encoded_bits / rate as usize;
+    decoded_bits.saturating_sub(order as usize + 1) / 8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{encoded_len_bits, payload_len_bytes, Encoder};
+
+    #[test]
+    fn length_helpers_round_trip() {
+        for rate in 2..=8u32 {
+            for order in 4..=16u32 {
+                let polys = vec![0o7u16; rate as usize];
+                let enc = Encoder::new(rate, order, &polys);
+                for len in [0usize, 1, 7, 8, 9, 100, 255, 4096] {
+                    let bits = encoded_len_bits(rate, order, len);
+                    assert_eq!(
+                        bits,
+                        enc.encode_len(len),
+                        "helper disagrees with encoder at {rate}/{order} len={len}"
+                    );
+                    assert_eq!(
+                        payload_len_bytes(rate, order, bits),
+                        len,
+                        "round trip failed at {rate}/{order} len={len}"
+                    );
+                }
+            }
+        }
+    }
+}
