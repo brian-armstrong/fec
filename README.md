@@ -35,21 +35,21 @@ With the `simd` feature, `fec` decodes faster than libfec on every code.
 Measured through libfec's own test programs with only the codec library
 swapped, on a Zen4 laptop (Ryzen 7840HS). Higher is better.
 
-| code                         | fec (64-bit) | libfec (best) | libfec (64-bit) |
-|------------------------------|-------------:|--------------:|----------------:|
-| conv, rate 1/2, k=7          |   158 Mbps   |   148 Mbps[^a]|      17 Mbps    |
-| conv, rate 1/2, k=9          |    66 Mbps   |    65 Mbps[^a]|       3 Mbps    |
-| conv, rate 1/3, k=9          |    61 Mbps   |    23 Mbps[^a]|       2 Mbps    |
-| conv, rate 1/6, k=15         |  1187 Kbps   |   415 Kbps[^a]|      40 Kbps    |
-| RS (255,223), general        |   568 Mbps   |   157 Mbps    |     157 Mbps    |
-| RS (255,223), CCSDS          |   568 Mbps   |   223 Mbps    |     223 Mbps    |
-| RS (255,223), general, 2 err |   445 Mbps   |   150 Mbps    |     150 Mbps    |
-| RS (255,223), CCSDS, 2 err   |   443 Mbps   |   207 Mbps    |     207 Mbps    |
+| code                         | fec (64-bit) | libfec (32-bit) | libfec (64-bit) |
+|------------------------------|-------------:|----------------:|----------------:|
+| conv, rate 1/2, k=7          |   158 Mbps   |    148 Mbps[^a] |      17 Mbps    |
+| conv, rate 1/2, k=9          |    66 Mbps   |     65 Mbps[^a] |       3 Mbps    |
+| conv, rate 1/3, k=9          |    61 Mbps   |     23 Mbps[^a] |       2 Mbps    |
+| conv, rate 1/6, k=15         |  1187 Kbps   |    415 Kbps[^a] |      40 Kbps    |
+| RS (255,223), general        |   568 Mbps   |    123 Mbps     |     157 Mbps    |
+| RS (255,223), CCSDS          |   568 Mbps   |    198 Mbps     |     223 Mbps    |
+| RS (255,223), general, 2 err |   445 Mbps   |    108 Mbps     |     150 Mbps    |
+| RS (255,223), CCSDS, 2 err   |   443 Mbps   |    165 Mbps     |     207 Mbps    |
 
 Convolutional throughput is decoded payload bits per second. The Reed-Solomon
 rows decode a (255,223) block, first with no errors (syndromes only) and then
-with two symbol errors. Reed-Solomon uses no SIMD in either library, so libfec's
-best there is simply its 64-bit build.
+with two symbol errors. Reed-Solomon uses no SIMD in either library, so its
+32-bit and 64-bit rows differ only by pointer width.
 
 [^a]: libfec's SIMD kernels are gated behind `#ifdef __i386__`, so its fastest
     convolutional build is the 32-bit one, running Karn's SSE2 assembly. A
