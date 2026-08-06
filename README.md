@@ -12,8 +12,9 @@ software-defined radio and spacecraft links:
 - **Convolutional codes** with a Viterbi decoder (hard and soft decision),
   including the common rate-1/2 k=7, rate-1/2 k=9, rate-1/3 k=9, and
   rate-1/6 k=15 codes. Supports any rate from 1/2 to 1/8 and any order from
-  k=4 to k=16. On nightly Rust, the `simd` feature enables a Viterbi decoder
-  with acceleration on SSE/AVX2/AVX512.
+  k=4 to k=16. Erasures and punctured codes are supported on both the hard
+  and soft decoders. On nightly Rust, the `simd` feature enables a Viterbi
+  decoder with acceleration on SSE/AVX2/AVX512.
 - **Reed–Solomon codes** over GF(2⁸) with error and erasure decoding, including
   the standard **CCSDS (255,223)** code in both the conventional and the
   on-the-wire **dual-basis** (Berlekamp) representations.
@@ -120,8 +121,6 @@ exposes `fec` under libfec's C ABI (`init_rs_char`, `create_viterbi27`,
 
 - More widths for the Reed-Solomon encoder/decoder (narrower than
   GF(2⁸) and as wide as GF(2¹⁶))
-- Hard-decision erasures in the convolutional (Viterbi) decoder
-- Punctured codes for the convolutional encoder and decoder
 
 ## License
 
