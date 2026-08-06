@@ -3,7 +3,7 @@ members = ["shim"]
 
 [package]
 name = "fec"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Brian Armstrong <brian.armstrong.ece+github@gmail.com>"]
 description = "Forward error correction for SDR, space, and satellite: convolutional (Viterbi) and Reed-Solomon codes, including the CCSDS (255,223) standard in both conventional and dual-basis representations."
