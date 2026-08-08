@@ -123,6 +123,28 @@ fn decode_single_error_each_position() {
 }
 
 #[test]
+fn shortened_blocks_decode_at_every_length() {
+    let mut rs = rs32();
+    for msg_len in 1..=223usize {
+        let msg: Vec<u8> = (0..msg_len).map(|i| ((i * 7 + 3) % 251) as u8).collect();
+        let mut encoded = vec![0u8; 255];
+        rs.encode(&msg, &mut encoded).unwrap();
+
+        let block_len = msg_len + rs.min_distance();
+        let mut corrupted = encoded[..block_len].to_vec();
+        let t = rs.min_distance() / 2;
+        for k in 0..t {
+            corrupted[(k * 5) % block_len] ^= 0xA7;
+        }
+
+        let mut decoded = vec![0u8; msg_len];
+        let corrected = rs.decode(&corrupted, &mut decoded).unwrap();
+        assert_eq!(&decoded[..], &msg[..], "msg_len {msg_len} did not round trip");
+        assert!(corrected <= 16, "msg_len {msg_len} reported {corrected} corrections");
+    }
+}
+
+#[test]
 fn decode_short_message_roundtrips() {
     // short messages use virtual padding: encode emits msg + 32 parity, and
     // we decode that trimmed block (length msg_length + min_distance).

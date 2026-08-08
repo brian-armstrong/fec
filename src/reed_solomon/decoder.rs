@@ -231,12 +231,12 @@ impl Decoder {
     //   these syndromes are all zero, then we can conclude the error polynomial is also
     //   zero. if they're nonzero, then we know our message received an error in transit.
     // returns true if syndromes are all zero
-    fn find_syndromes(&mut self) -> bool {
+    fn find_syndromes(&mut self, encoded_length: usize) -> bool {
         let mut all_zero = true;
         for s in self.syndromes.iter_mut() {
             *s = 0;
         }
-        let msgpoly = Polynomial::new(&self.received_polynomial, self.block_length - 1);
+        let msgpoly = Polynomial::new(&self.received_polynomial, encoded_length - 1);
         for i in 0..self.min_distance {
             // profiling reveals that this function takes about 50% of the cpu time of
             // decoding. so, in order to speed it up a little, we precompute and save
@@ -520,7 +520,8 @@ impl Decoder {
             self.received_polynomial[i + encoded_length] = 0;
         }
 
-        let all_zero = self.find_syndromes();
+        // don't include the padding in syndrome calculation
+        let all_zero = self.find_syndromes(encoded_length);
 
         if all_zero {
             // syndromes were all zero, so there was no error in the message
@@ -673,7 +674,7 @@ impl Decoder {
 
         self.find_error_locator_from_roots(erasure_length);
 
-        let all_zero = self.find_syndromes();
+        let all_zero = self.find_syndromes(encoded_length);
 
         if all_zero {
             // syndromes were all zero, so there was no error in the message
