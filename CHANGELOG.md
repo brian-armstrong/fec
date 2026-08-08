@@ -8,6 +8,26 @@ While the crate is pre-1.0, minor version bumps may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-07
+
+### Added
+
+- `Clone` on `ConvEncoder`, `ConvDecoder`, `ConvSimdDecoder`, `RsEncoder`, and
+  `RsDecoder`.
+- `PartialEq` and `Eq` on `ConvPuncturer`, which compare the puncturing pattern.
+- `Hash` on the error types.
+- `Debug` on `RsEncoder` and `RsDecoder`.
+
+### Fixed
+
+- `Puncturer` corrupted the last byte of a punctured stream whose length was not
+  a multiple of 8. The bits in that byte landed one position off, so
+  `depuncture_hard` and `depuncture_soft` returned wrong values for them.
+
+### Changed
+
+- The Reed-Solomon decoder is now faster on shortened blocks.
+
 ## [0.2.1] - 2026-08-06
 
 ### Added
@@ -48,6 +68,7 @@ While the crate is pre-1.0, minor version bumps may contain breaking changes.
 Initial release. A convolutional encoder and decoder
 (`fec::convolutional::Encoder` and `Decoder`), hard-decision only.
 
-[Unreleased]: https://github.com/brian-armstrong/fec/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/brian-armstrong/fec/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/brian-armstrong/fec/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/brian-armstrong/fec/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/brian-armstrong/fec/tree/v0.2.0
