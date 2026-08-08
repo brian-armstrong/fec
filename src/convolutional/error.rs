@@ -14,7 +14,7 @@ use std::fmt;
 /// structural problems with the call. Either the encoded length is not a whole
 /// number of code symbols, or the output buffer is too small for the decoded
 /// payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum DecodeError {
     /// The encoded length in bits is not a multiple of the code's `rate`. It
@@ -57,7 +57,7 @@ impl std::error::Error for DecodeError {}
 /// buffer too small to hold the encoded block. A polynomial or parameter shape
 /// that does not match the `(rate, order)` is a programmer error and panics in
 /// [`Encoder::new`](super::Encoder::new) instead.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum EncodeError {
     /// The output buffer is too small to hold the encoded block.
@@ -83,7 +83,7 @@ impl fmt::Display for EncodeError {
 impl std::error::Error for EncodeError {}
 
 /// Error returned by [`Puncturer`](super::Puncturer).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PunctureError {
     /// The pattern is empty, so it describes no period at all.

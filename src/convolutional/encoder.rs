@@ -17,7 +17,7 @@ use super::util;
 ///
 /// An `Encoder` decodes nothing. Pair it with a [`Decoder`](super::Decoder), or
 /// the SIMD decoder, to recover the message.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Encoder {
     rate: u32,
     order: u32,

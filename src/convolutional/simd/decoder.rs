@@ -9,7 +9,7 @@ use crate::convolutional::payload_len_bytes;
 use crate::convolutional::util;
 
 #[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ForcedPath {
     RegisterAvx512,  // u16x32, fully register, AVX-512
     RegisterAvx2,    // u16x16, register-resident, AVX2
@@ -27,7 +27,7 @@ pub enum ForcedPath {
 }
 
 #[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DecoderArch {
     Sse41,
     Avx2,
@@ -35,7 +35,7 @@ pub enum DecoderArch {
 }
 
 #[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EnableArch {
     pub sse41: bool,
     pub avx2: bool,
@@ -58,7 +58,7 @@ pub struct EnableArch {
 ///
 /// This type needs the `simd` feature and a nightly compiler.
 #[cfg_attr(docsrs, doc(cfg(feature = "simd")))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SimdDecoder<const RATE: u32, const ORDER: u32> {
     poly_table: Vec<u8>,
     oct_lookup: OctLookup,

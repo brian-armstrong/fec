@@ -7,7 +7,7 @@ use super::polynomial::{
 };
 
 /// Error returned by [`Decoder::decode`] / [`Decoder::decode_with_erasures`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum DecodeError {
     /// The encoded block was longer than the code's block length.
@@ -37,6 +37,7 @@ impl fmt::Display for DecodeError {
 impl std::error::Error for DecodeError {}
 
 /// Reed-Solomon decoder over GF(2^8).
+#[derive(Debug, Clone)]
 pub struct Decoder {
     block_length: usize,
     message_length: usize,

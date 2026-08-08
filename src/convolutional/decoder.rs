@@ -101,7 +101,7 @@ impl<'a> ConvolutionalError<'a> {
 /// This is the portable scalar decoder. For higher throughput on x86, enable
 /// the `simd` feature and use the SIMD decoder. It decodes identically.
 #[cfg_attr(feature = "simd", doc = "See [`SimdDecoder`](super::SimdDecoder).")]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Decoder {
     rate: u32,
     order: u32,
@@ -523,7 +523,7 @@ impl Decoder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct ConvolutionalErrorTable {
     pub(super) errors: Vec<u16>,
     pub(super) previous_errors: Vec<u16>,
@@ -547,7 +547,7 @@ impl ConvolutionalErrorTable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct ConvolutionalHistoryTable {
     min_traceback_length: u32,
     num_states: u32,
@@ -693,7 +693,7 @@ impl ConvolutionalHistoryTable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Represent convolutional distance metrics for a pair of shift register states
 struct ConvolutionalPairTable {
     keys: Vec<u32>,

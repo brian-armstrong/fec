@@ -18,7 +18,7 @@ use super::error::PunctureError;
 /// Use [`Puncturer::new`] for a keep-mask in that flat form. Use
 /// [`Puncturer::from_matrix`] for the `rate` by `period` puncturing matrix used
 /// in the coding literature and in standards.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Puncturer {
     keep: Vec<bool>,
     kept_per_period: usize,

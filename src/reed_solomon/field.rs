@@ -14,6 +14,7 @@ pub type FieldLogarithm = u8;
 // Variables of this type aren't really in any proper space.
 pub type FieldOperation = u16;
 
+#[derive(Debug, Clone)]
 pub struct Field {
     pub exp: [FieldElement; 512],
     pub log: [FieldLogarithm; 256],

@@ -6,7 +6,7 @@ use super::field::{Field, FieldElement, FieldLogarithm, FieldOperation};
 use super::polynomial::{polynomial_mod, reed_solomon_build_generator, Polynomial};
 
 /// Error returned by [`Encoder::encode`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum EncodeError {
     /// The message was longer than the code's message capacity.
@@ -26,6 +26,7 @@ impl fmt::Display for EncodeError {
 impl std::error::Error for EncodeError {}
 
 /// Reed-Solomon encoder over GF(2^8).
+#[derive(Debug, Clone)]
 pub struct Encoder {
     block_length: usize,
     message_length: usize,
