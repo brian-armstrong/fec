@@ -202,19 +202,21 @@ impl Puncturer {
             });
         }
 
-        erasure[..needed].fill(0);
         let mut reader = BitReader::new(src);
         let mut writer = BitWriter::new(dst);
+        let mut erasure_writer = BitWriter::new(erasure);
         for i in 0..encoded_bits {
             if self.keeps(i) {
                 writer.write(reader.read(1), 1);
+                erasure_writer.write(0, 1);
             } else {
                 // the value is arbitrary. the erasure flag is what the decoder reads.
                 writer.write(0, 1);
-                erasure[i / 8] |= 0x80 >> (i % 8);
+                erasure_writer.write(1, 1);
             }
         }
         writer.flush();
+        erasure_writer.flush();
 
         Ok(())
     }
@@ -255,18 +257,20 @@ impl Puncturer {
             });
         }
 
-        erasure[..mask_bytes].fill(0);
         let mut read = 0usize;
+        let mut erasure_writer = BitWriter::new(erasure);
         for i in 0..encoded_bits {
             if self.keeps(i) {
                 dst[i] = src[read];
                 read += 1;
+                erasure_writer.write(0, 1);
             } else {
                 // this value also does not matter. only the erasure bit will be used by the decoder
                 dst[i] = 128;
-                erasure[i / 8] |= 0x80 >> (i % 8);
+                erasure_writer.write(1, 1);
             }
         }
+        erasure_writer.flush();
 
         Ok(())
     }
@@ -429,58 +433,92 @@ mod tests {
     #[test]
     fn handles_non_byte_aligned_block() {
         let p = new(&RATE_3_4);
-        // rate 2, order 6, 10-byte message gives 2 * (80 + 7) = 174 bits
-        let mut enc = Encoder::new(2, 6, &[0o065, 0o057]);
-        let enc_bits = enc.encode_len(10);
-        assert_eq!(enc_bits, 174, "expected a non-byte-aligned block");
-        assert!(!enc_bits.is_multiple_of(8));
+        let mut unaligned_enc_seen = 0;
+        let mut unaligned_punc_seen = 0;
 
-        let mut rng = Rng::new(4242);
-        let mut msg = vec![0u8; 10];
-        for b in &mut msg {
-            *b = rng.next_u8();
-        }
-        let mut encoded = vec![0u8; enc_bits.div_ceil(8)];
-        enc.encode(&msg, &mut encoded).unwrap();
+        let mut rng = Rng::new(0xABCD_1234);
 
-        let mut punctured = vec![0u8; p.punctured_len(enc_bits).div_ceil(8)];
-        p.puncture(&encoded, enc_bits, &mut punctured).unwrap();
+        for enc_bits in 8usize..=512 {
+            if !enc_bits.is_multiple_of(8) {
+                unaligned_enc_seen += 1;
+            }
 
-        // hard: explicit count, so the trailing partial byte is handled exactly
-        let mut expanded = vec![0u8; enc_bits.div_ceil(8)];
-        let mut erasure = vec![0u8; enc_bits.div_ceil(8)];
-        p.depuncture_hard(&punctured, enc_bits, &mut expanded, &mut erasure)
-            .unwrap();
-        for i in 0..enc_bits {
-            let erased = erasure[i / 8] & (0x80 >> (i % 8)) != 0;
-            assert_eq!(erased, !p.keeps(i), "hard erasure flag wrong at bit {i}");
-            if !erased {
-                assert_eq!(
-                    expanded[i / 8] & (0x80 >> (i % 8)),
-                    encoded[i / 8] & (0x80 >> (i % 8)),
-                    "hard kept bit {i} did not survive"
-                );
+            let mut encoded = vec![0u8; enc_bits.div_ceil(8)];
+            for b in &mut encoded {
+                *b = rng.next_u8();
+            }
+
+            let punctured_len = p.punctured_len(enc_bits);
+            if !punctured_len.is_multiple_of(8) {
+                unaligned_punc_seen += 1;
+            }
+
+            let mut punctured = vec![0u8; punctured_len.div_ceil(8)];
+            p.puncture(&encoded, enc_bits, &mut punctured).unwrap();
+
+            // hard: explicit count, so the trailing partial byte is handled exactly
+            let mut expanded = vec![0u8; enc_bits.div_ceil(8)];
+            let mut erasure = vec![0u8; enc_bits.div_ceil(8)];
+            p.depuncture_hard(&punctured, enc_bits, &mut expanded, &mut erasure)
+                .unwrap();
+            for i in 0..enc_bits {
+                let erased = erasure[i / 8] & (0x80 >> (i % 8)) != 0;
+                assert_eq!(erased, !p.keeps(i), "hard erasure flag wrong at bit {i}");
+                if !erased {
+                    assert_eq!(
+                        expanded[i / 8] & (0x80 >> (i % 8)),
+                        encoded[i / 8] & (0x80 >> (i % 8)),
+                        "hard kept bit {i} did not survive"
+                    );
+                }
+            }
+
+            // soft: dst.len() carries the exact bit count, no argument needed
+            let soft_punctured: Vec<u8> = (0..enc_bits)
+                .filter(|&i| p.keeps(i))
+                .map(|i| {
+                    if encoded[i / 8] & (0x80 >> (i % 8)) != 0 {
+                        255
+                    } else {
+                        0
+                    }
+                })
+                .collect();
+            let mut soft_expanded = vec![0u8; enc_bits];
+            let mut soft_erasure = vec![0u8; enc_bits.div_ceil(8)];
+            p.depuncture_soft(&soft_punctured, &mut soft_expanded, &mut soft_erasure)
+                .unwrap();
+            assert_eq!(
+                soft_erasure, erasure,
+                "hard and soft must produce the same erasure mask for the same block"
+            );
+            for i in 0..enc_bits {
+                if p.keeps(i) {
+                    let want = if encoded[i / 8] & (0x80 >> (i % 8)) != 0 {
+                        255
+                    } else {
+                        0
+                    };
+                    assert_eq!(
+                        soft_expanded[i], want,
+                        "kept soft symbol {i} of {enc_bits} did not survive"
+                    );
+                } else {
+                    assert_eq!(
+                        soft_expanded[i], 128,
+                        "punctured soft slot {i} of {enc_bits} should hold the neutral value"
+                    );
+                }
             }
         }
 
-        // soft: dst.len() carries the exact bit count, no argument needed
-        let soft_punctured: Vec<u8> = (0..enc_bits)
-            .filter(|&i| p.keeps(i))
-            .map(|i| {
-                if encoded[i / 8] & (0x80 >> (i % 8)) != 0 {
-                    255
-                } else {
-                    0
-                }
-            })
-            .collect();
-        let mut soft_expanded = vec![0u8; enc_bits];
-        let mut soft_erasure = vec![0u8; enc_bits.div_ceil(8)];
-        p.depuncture_soft(&soft_punctured, &mut soft_expanded, &mut soft_erasure)
-            .unwrap();
-        assert_eq!(
-            soft_erasure, erasure,
-            "hard and soft must produce the same erasure mask for the same block"
+        assert!(
+            unaligned_enc_seen > 0,
+            "sweep never produced a non-byte-aligned encoded length"
+        );
+        assert!(
+            unaligned_punc_seen > 0,
+            "sweep never produced a non-byte-aligned punctured length"
         );
     }
 

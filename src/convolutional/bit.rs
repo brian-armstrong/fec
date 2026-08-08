@@ -97,7 +97,7 @@ impl<'a> BitWriter<'a> {
 
     pub fn flush(&mut self) {
         if self.current_byte_len != 0 {
-            self.current_byte <<= 8 - self.current_byte_len;
+            self.current_byte <<= 8 - self.current_byte_len - 1;
             self.buf[self.byte_index] = self.current_byte;
             self.byte_index += 1;
             self.current_byte_len = 0;
@@ -178,5 +178,44 @@ impl<'a> BitReader<'a> {
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.buf.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BitReader, BitWriter};
+
+    #[test]
+    fn round_trips_partial_trailing_byte() {
+        for nbits in 1..=64usize {
+            let pattern: Vec<u8> = (0..nbits).map(|i| ((i * 5 + 1) % 2) as u8).collect();
+
+            let mut buf = vec![0u8; nbits.div_ceil(8)];
+            {
+                let mut w = BitWriter::new(&mut buf);
+                for &b in &pattern {
+                    w.write(b, 1);
+                }
+                w.flush();
+            }
+
+            let mut r = BitReader::new(&buf);
+            let got: Vec<u8> = (0..nbits).map(|_| r.read(1)).collect();
+            assert_eq!(got, pattern, "bit round trip failed at nbits={nbits}");
+        }
+    }
+
+    #[test]
+    fn partial_byte_is_left_aligned() {
+        let mut buf = [0u8; 2];
+        {
+            let mut w = BitWriter::new(&mut buf);
+            w.write(1, 1);
+            w.write(0, 1);
+            w.write(1, 1);
+            w.flush();
+        }
+        // three bits 1,0,1 most significant first
+        assert_eq!(buf[0], 0b1010_0000, "got {:08b}", buf[0]);
     }
 }
